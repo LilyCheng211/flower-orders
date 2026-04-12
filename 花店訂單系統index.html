@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>花店訂單系統</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;500;700&family=Noto+Sans+TC:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --cream: #faf7f2;
+  --warm-white: #fff9f4;
+  --sage: #8a9e8a;
+  --sage-light: #e8ede8;
+  --sage-dark: #5a6e5a;
+  --terracotta: #c4714a;
+  --terracotta-light: #f5e8e1;
+  --amber: #d4943a;
+  --amber-light: #fdf0dc;
+  --ink: #2c2c28;
+  --ink-muted: #6b6b64;
+  --ink-faint: #b5b5aa;
+  --border: #e2ddd6;
+  --blue-light: #e6f1fb;
+  --blue: #378ADD;
+  --green-light: #eaf3de;
+  --green: #3B6D11;
+  --rest-bg: #FEF9E7;
+  --rest-border: #F5CBA7;
+  --stall-bg: #FAEEDA;
+  --stall-color: #854F0B;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Noto Sans TC', sans-serif;
+  background: var(--cream);
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+/* ── Navigation ── */
+nav {
+  background: var(--warm-white);
+  border-bottom: 1px solid var(--border);
+  padding: 0 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.nav-logo {
+  font-family: 'Noto Serif TC', serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  padding: 1rem 1.5rem 1rem 0;
+  border-right: 1px solid var(--border);
+  margin-right: 1.5rem;
+  letter-spacing: 0.05em;
+}
+
+.nav-tab {
+  padding: 1.1rem 1.25rem;
+  font-size: 14px;
+  color: var(--ink-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+.nav-tab:hover { color: var(--ink); }
+.nav-tab.active { color: var(--terracotta); border-bottom-color: var(--terracotta); font-weight: 500; }
+
+/* ── Pages ── */
+.page { display: none; padding: 2rem; max-width: 960px; margin: 0 auto; }
+.page.active { display: block; }
+
+/* ── Section title ── */
+.section-title {
+  font-family: 'Noto Serif TC', serif;
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 0.25rem;
+}
+.section-sub {
+  font-size: 13px;
+  color: var(--ink-faint);
+  margin-bottom: 2rem;
+}
+
+/* ── Form ── */
+.form-card {
+  background: var(--warm-white);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+.form-grid .full { grid-column: 1 / -1; }
+
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: 'Noto Sans TC', sans-serif;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.field input:focus,
+.field textarea:focus,
+.field select:focus { border-color: var(--sage); }
+.field textarea { resize: vertical; min-height: 72px; }
+
+.submit-btn {
+  margin-top: 1.5rem;
+  width: 100%;
+  padding: 14px;
+  background: var(--terracotta);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  font-family: 'Noto Sans TC', sans-serif;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  letter-spacing: 0.05em;
+}
+.submit-btn:hover { background: #b5603c; }
+.submit-btn:active { transform: scale(0.99); }
+.submit-btn:disabled { background: var(--ink-faint); cursor: not-allowed; }
+
+.toast {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--ink);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 100px;
+  font-size: 14px;
+  opacity: 0;
+  transition: all 0.3s;
+  z-index: 999;
+  white-space: nowrap;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.success { background: var(--sage-dark); }
+.toast.error { background: #c0392b; }
+
+/* ── Calendar ── */
+.cal-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 1.5rem;
+}
+.stat-card {
+  background: var(--warm-white);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.stat-label { font-size: 11px; color: var(--ink-faint); letter-spacing: 0.05em; text-transform: uppercase; }
+.stat-val { font-size: 22px; font-weight: 500; color: var(--ink); margin-top: 4px; }
+
+.legend {
+  display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 1.25rem;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-muted); }
+.legend-dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+
+.cal-nav {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;
+}
+.cal-nav-title {
+  font-family: 'Noto Serif TC', serif;
+  font-size: 18px; font-weight: 500; color: var(--ink);
+}
+.cal-nav button {
+  background: var(--warm-white);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--ink);
+  transition: background 0.15s;
+}
+.cal-nav button:hover { background: var(--sage-light); }
+
+.cal-loading {
+  text-align: center;
+  padding: 3rem;
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
+.grid-header {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px;
+}
+.grid-header span {
+  text-align: center; font-size: 11px; color: var(--ink-faint);
+  letter-spacing: 0.05em; padding: 4px 0;
+}
+
+.cal-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+}
+
+.day {
+  height: 100px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 6px;
+  background: var(--warm-white);
+  overflow: hidden;
+}
+.day.empty { background: none; border-color: transparent; }
+.day.today { border: 2px solid var(--blue); }
+.day.rest { background: var(--rest-bg); border-color: var(--rest-border); }
+.day.rest .day-num { color: #B7950B; }
+.day.clickable { cursor: pointer; }
+.day.clickable:hover { opacity: 0.82; }
+
+.day-num { font-size: 12px; color: var(--ink-faint); margin-bottom: 3px; }
+.day.today .day-num { color: var(--blue); font-weight: 500; }
+
+.order-pill {
+  font-size: 10px; line-height: 1.3; padding: 2px 5px; border-radius: 4px;
+  margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--blue-light); color: #185FA5; display: block;
+}
+.order-pill.delivery { background: var(--green-light); color: var(--green); }
+.stall-pill {
+  font-size: 10px; line-height: 1.3; padding: 2px 5px; border-radius: 4px;
+  margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--stall-bg); color: var(--stall-color); display: block; font-weight: 500;
+}
+.more-badge { font-size: 10px; color: var(--ink-faint); padding: 1px 4px; }
+
+/* ── Detail panel ── */
+.detail-panel {
+  margin-top: 1rem;
+  background: var(--warm-white);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+  display: none;
+}
+.detail-panel.open { display: block; }
+.detail-title {
+  font-family: 'Noto Serif TC', serif;
+  font-size: 15px; font-weight: 500; color: var(--ink); margin-bottom: 12px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.detail-close {
+  font-size: 18px; cursor: pointer; color: var(--ink-faint); line-height: 1;
+  background: none; border: none; padding: 0;
+}
+.order-row {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.order-row:last-child { border-bottom: none; }
+.order-idx {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--blue-light); color: #185FA5;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 500; flex-shrink: 0; margin-top: 1px;
+}
+.order-idx.stall { background: var(--stall-bg); color: var(--stall-color); }
+.order-info { flex: 1; }
+.order-name { font-size: 14px; font-weight: 500; color: var(--ink); }
+.order-item-text { font-size: 12px; color: var(--ink-muted); margin-top: 2px; line-height: 1.5; }
+.order-meta { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+.tag {
+  font-size: 11px; padding: 2px 8px; border-radius: 20px;
+  background: var(--cream); color: var(--ink-muted); border: 1px solid var(--border);
+}
+.tag.green { background: var(--green-light); color: var(--green); border-color: transparent; }
+.tag.orange { background: var(--stall-bg); color: var(--stall-color); border-color: transparent; }
+.delete-btn {
+  font-size: 11px; color: #c0392b; background: none; border: none;
+  cursor: pointer; padding: 2px 6px; border-radius: 4px; margin-top: 4px;
+  opacity: 0.6;
+}
+.delete-btn:hover { opacity: 1; background: #fdecea; }
+
+@media (max-width: 600px) {
+  .page { padding: 1rem; }
+  .form-grid { grid-template-columns: 1fr; }
+  .form-grid .full { grid-column: 1; }
+  .cal-stats { grid-template-columns: 1fr 1fr; }
+  nav { padding: 0 1rem; }
+  .nav-logo { display: none; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">🌸 花店</div>
+  <div class="nav-tab active" onclick="switchTab('form')">新增訂單</div>
+  <div class="nav-tab" onclick="switchTab('calendar')">訂單月曆</div>
+</nav>
+
+<!-- ═══════════════ 填單頁 ═══════════════ -->
+<div class="page active" id="page-form">
+  <p class="section-title">新增訂單</p>
+  <p class="section-sub">填寫完成後，資料會自動同步到 Google Sheet</p>
+
+  <div class="form-card">
+    <div class="form-grid">
+      <div class="field">
+        <label>姓名 *</label>
+        <input type="text" id="f-name" placeholder="客戶姓名 / IG 帳號">
+      </div>
+      <div class="field">
+        <label>電話</label>
+        <input type="tel" id="f-phone" placeholder="09xx-xxx-xxx">
+      </div>
+      <div class="field">
+        <label>金額</label>
+        <input type="number" id="f-amount" placeholder="1390">
+      </div>
+      <div class="field">
+        <label>取花時間 *</label>
+        <input type="text" id="f-pickup" placeholder="4/17 13:00">
+      </div>
+      <div class="field">
+        <label>配送方式</label>
+        <select id="f-delivery">
+          <option value="自取">自取</option>
+          <option value="全家 自取">全家 自取</option>
+          <option value="黑貓 上午">黑貓 上午</option>
+          <option value="黑貓 下午">黑貓 下午</option>
+          <option value="Lala 來取">Lala 來取</option>
+          <option value="Lala 代叫">Lala 代叫</option>
+          <option value="親自外送">親自外送</option>
+          <option value="TBC">TBC</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>品項 *</label>
+        <input type="text" id="f-item" placeholder="《 糖果花 》許願藍色系">
+      </div>
+      <div class="field full">
+        <label>備註</label>
+        <textarea id="f-note" placeholder="特殊需求、末五碼、卡片文字等..."></textarea>
+      </div>
+    </div>
+    <button class="submit-btn" id="submit-btn" onclick="submitOrder()">新增訂單 →</button>
+  </div>
+</div>
+
+<!-- ═══════════════ 月曆頁 ═══════════════ -->
+<div class="page" id="page-calendar">
+  <p class="section-title">訂單月曆</p>
+  <p class="section-sub">點擊日期格查看當日訂單明細</p>
+
+  <div class="cal-stats" id="cal-stats">
+    <div class="stat-card"><div class="stat-label">讀取中</div><div class="stat-val">—</div></div>
+    <div class="stat-card"><div class="stat-label">讀取中</div><div class="stat-val">—</div></div>
+    <div class="stat-card"><div class="stat-label">讀取中</div><div class="stat-val">—</div></div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#E6F1FB;border:1px solid #378ADD"></div>自取訂單</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#EAF3DE;border:1px solid #3B6D11"></div>宅配訂單</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#FAEEDA;border:1px solid #d4943a"></div>出攤日</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#FEF9E7;border:1px solid #F5CBA7"></div>休息日</div>
+  </div>
+
+  <div class="cal-nav">
+    <button onclick="changeMonth(-1)">&#8592;</button>
+    <span class="cal-nav-title" id="cal-nav-title">—</span>
+    <button onclick="changeMonth(1)">&#8594;</button>
+  </div>
+
+  <div class="grid-header">
+    <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+  </div>
+  <div class="cal-grid" id="cal-grid">
+    <div class="cal-loading">載入訂單中...</div>
+  </div>
+
+  <div class="detail-panel" id="detail-panel">
+    <div class="detail-title">
+      <span id="detail-title-text"></span>
+      <button class="detail-close" onclick="closeDetail()">×</button>
+    </div>
+    <div id="detail-orders"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ════════════════════════════════════════
+// ⚙️  設定：把這裡換成你的 API 網址
+// ════════════════════════════════════════
+const API_URL = "https://script.google.com/macros/s/AKfycbzd13qsM3vCErvNVODKtTgKU7zoy4fpoY_k8p4wVowQCw73es__vzWYa5BI4-aM6HrVKw/exec";
+
+// ════════════════════════════════════════
+// 出攤資料（可自行新增）
+// ════════════════════════════════════════
+const STALLS = {
+  "2026-05-23":["台科大"],
+  "2026-05-30":["台大","師大","政大","北教大"],
+  "2026-06-01":["協和佑德"],
+  "2026-06-02":["南湖高中"],
+  "2026-06-03":["南港國中"],
+  "2026-06-06":["淡江","輔仁","海洋","北市大"],
+  "2026-06-09":["興雅國中"],
+  "2026-06-13":["東吳","實踐"],
+  "2026-06-14":["東吳","實踐"],
+  "2026-06-15":["福星國小"]
+};
+
+// ════════════════════════════════════════
+// 狀態
+// ════════════════════════════════════════
+let allOrders = [];
+let curYear = new Date().getFullYear();
+let curMonth = new Date().getMonth();
+const todayStr = new Date().toISOString().slice(0,10);
+
+// 出攤日前一天也算工作日
+const workDates = new Set();
+Object.keys(STALLS).forEach(d => {
+  workDates.add(d);
+  const dt = new Date(d);
+  dt.setDate(dt.getDate() - 1);
+  workDates.add(dt.toISOString().slice(0,10));
+});
+
+// ════════════════════════════════════════
+// Tab 切換
+// ════════════════════════════════════════
+function switchTab(tab) {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('page-' + tab).classList.add('active');
+  if (tab === 'calendar') loadOrders();
+}
+
+// ════════════════════════════════════════
+// Toast 通知
+// ════════════════════════════════════════
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+
+// ════════════════════════════════════════
+// 新增訂單
+// ════════════════════════════════════════
+async function submitOrder() {
+  const name   = document.getElementById('f-name').value.trim();
+  const pickup = document.getElementById('f-pickup').value.trim();
+  const item   = document.getElementById('f-item').value.trim();
+
+  if (!name || !pickup || !item) {
+    showToast('請填寫姓名、取花時間、品項', 'error'); return;
+  }
+
+  const data = {
+    name,
+    phone:    document.getElementById('f-phone').value.trim(),
+    amount:   document.getElementById('f-amount').value.trim(),
+    pickup,
+    delivery: document.getElementById('f-delivery').value,
+    item,
+    note:     document.getElementById('f-note').value.trim(),
+  };
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = '新增中...';
+
+  try {
+    const url = `${API_URL}?action=addOrder&data=${encodeURIComponent(JSON.stringify(data))}`;
+    const res = await fetch(url);
+    const json = await res.json();
+
+    if (json.success) {
+      showToast('✓ 訂單已新增到 Google Sheet', 'success');
+      // 清空表單
+      ['f-name','f-phone','f-amount','f-pickup','f-item','f-note'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('f-delivery').selectedIndex = 0;
+      // 重新整理月曆資料
+      allOrders = [];
+    } else {
+      showToast('新增失敗：' + json.message, 'error');
+    }
+  } catch(e) {
+    showToast('連線失敗，請確認網路', 'error');
+  }
+
+  btn.disabled = false;
+  btn.textContent = '新增訂單 →';
+}
+
+// ════════════════════════════════════════
+// 讀取訂單
+// ════════════════════════════════════════
+async function loadOrders() {
+  if (allOrders.length > 0) { renderCalendar(); return; }
+  document.getElementById('cal-grid').innerHTML = '<div class="cal-loading">載入訂單中...</div>';
+
+  try {
+    const res = await fetch(`${API_URL}?action=getOrders`);
+    const json = await res.json();
+    if (json.success) {
+      allOrders = json.orders;
+      renderStats();
+      renderCalendar();
+    } else {
+      document.getElementById('cal-grid').innerHTML = '<div class="cal-loading">讀取失敗：' + json.message + '</div>';
+    }
+  } catch(e) {
+    document.getElementById('cal-grid').innerHTML = '<div class="cal-loading">連線失敗，請重新整理</div>';
+  }
+}
+
+// ════════════════════════════════════════
+// 統計數字
+// ════════════════════════════════════════
+function renderStats() {
+  const future = allOrders.filter(o => parsePickupDate(o.pickup) > new Date(todayStr));
+  const total = future.length;
+  const revenue = future.reduce((s,o) => s + (parseFloat(o.amount)||0), 0);
+
+  // 最忙日
+  const byDate = {};
+  future.forEach(o => {
+    const d = pickupToDateStr(o.pickup);
+    if(d) byDate[d] = (byDate[d]||0) + 1;
+  });
+  const busiest = Object.entries(byDate).sort((a,b)=>b[1]-a[1])[0];
+  const busiestLabel = busiest ? busiest[0].slice(5) + '（' + busiest[1] + '張）' : '—';
+
+  document.getElementById('cal-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">待出貨訂單</div><div class="stat-val">${total} 張</div></div>
+    <div class="stat-card"><div class="stat-label">最忙碌日期</div><div class="stat-val" style="font-size:15px;margin-top:6px">${busiestLabel}</div></div>
+    <div class="stat-card"><div class="stat-label">預計總金額</div><div class="stat-val" style="font-size:17px;margin-top:4px">$${revenue.toLocaleString()}</div></div>`;
+}
+
+// ════════════════════════════════════════
+// 月曆渲染
+// ════════════════════════════════════════
+function changeMonth(delta) {
+  curMonth += delta;
+  if(curMonth < 0){ curMonth = 11; curYear--; }
+  if(curMonth > 11){ curMonth = 0; curYear++; }
+  renderCalendar();
+  closeDetail();
+}
+
+function renderCalendar() {
+  const titles = ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
+  document.getElementById('cal-nav-title').textContent = `${curYear} 年 ${titles[curMonth]}`;
+
+  // 把 allOrders 按日期分組
+  const byDate = {};
+  allOrders.forEach(o => {
+    const d = pickupToDateStr(o.pickup);
+    if(d){ if(!byDate[d]) byDate[d]=[]; byDate[d].push(o); }
+  });
+
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+  const first = new Date(curYear, curMonth, 1).getDay();
+  const days  = new Date(curYear, curMonth+1, 0).getDate();
+
+  for(let i=0;i<first;i++){
+    const e = document.createElement('div'); e.className='day empty'; grid.appendChild(e);
+  }
+
+  for(let d=1;d<=days;d++){
+    const ds = `${curYear}-${String(curMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const orders = byDate[ds]||[];
+    const stalls = STALLS[ds]||[];
+    const isToday = ds === todayStr;
+    const isPast  = ds < todayStr;
+    const isWork  = workDates.has(ds) || orders.length > 0;
+    const isRest  = !isPast && !isToday && !isWork;
+
+    const cell = document.createElement('div');
+    let cls = 'day';
+    if(isToday) cls += ' today';
+    if(isRest)  cls += ' rest';
+    if(orders.length || stalls.length) cls += ' clickable';
+    cell.className = cls;
+
+    let html = `<div class="day-num">${d}</div>`;
+    let shown = 0;
+    const maxShow = 3;
+    stalls.slice(0, maxShow).forEach(s => {
+      html += `<span class="stall-pill">${s}</span>`; shown++;
+    });
+    orders.slice(0, maxShow - shown).forEach(o => {
+      const isDel = o.delivery && o.delivery !== '自取' && o.delivery !== '';
+      html += `<span class="order-pill${isDel?' delivery':''}">${o.name.split(' ')[0].split('\u2028')[0]} · ${shortItem(o.item)}</span>`;
+      shown++;
+    });
+    const extra = stalls.length + orders.length - shown;
+    if(extra > 0) html += `<span class="more-badge">+${extra}</span>`;
+
+    cell.innerHTML = html;
+    if(orders.length || stalls.length){
+      cell.addEventListener('click', () => showDetail(ds, orders, stalls));
+    }
+    grid.appendChild(cell);
+  }
+}
+
+// ════════════════════════════════════════
+// 明細面板
+// ════════════════════════════════════════
+function showDetail(ds, orders, stalls) {
+  const parts = ds.split('-');
+  document.getElementById('detail-title-text').textContent =
+    `${parts[1]}月${parts[2]}日（${orders.length + stalls.length} 筆）`;
+
+  let html = stalls.map((s,i) => `
+    <div class="order-row">
+      <div class="order-idx stall">${i+1}</div>
+      <div class="order-info">
+        <div class="order-name">出攤</div>
+        <div class="order-item-text">${s}</div>
+        <div class="order-meta"><span class="tag orange">出攤日</span></div>
+      </div>
+    </div>`).join('');
+
+  html += orders.map((o,i) => `
+    <div class="order-row" id="row-${o.row}">
+      <div class="order-idx">${stalls.length+i+1}</div>
+      <div class="order-info">
+        <div class="order-name">${o.name}</div>
+        <div class="order-item-text">${o.item}</div>
+        <div class="order-meta">
+          <span class="tag">${o.pickup}</span>
+          ${o.delivery ? `<span class="tag green">${o.delivery}</span>` : ''}
+          ${o.amount   ? `<span class="tag">$${parseFloat(o.amount).toLocaleString()}</span>` : ''}
+          ${o.note     ? `<span class="tag">${o.note.slice(0,20)}</span>` : ''}
+        </div>
+        <button class="delete-btn" onclick="deleteOrder(${o.row}, '${o.name.replace(/'/g,"\\'")}')">✕ 刪除此筆</button>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('detail-orders').innerHTML = html;
+  document.getElementById('detail-panel').className = 'detail-panel open';
+}
+
+function closeDetail() {
+  document.getElementById('detail-panel').className = 'detail-panel';
+}
+
+// ════════════════════════════════════════
+// 刪除訂單
+// ════════════════════════════════════════
+async function deleteOrder(rowNum, name) {
+  if(!confirm(`確定要刪除「${name}」的訂單嗎？`)) return;
+  try {
+    const url = `${API_URL}?action=deleteOrder&row=${rowNum}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if(json.success){
+      showToast('✓ 已刪除', 'success');
+      allOrders = [];
+      closeDetail();
+      loadOrders();
+    } else {
+      showToast('刪除失敗：' + json.message, 'error');
+    }
+  } catch(e) {
+    showToast('連線失敗', 'error');
+  }
+}
+
+// ════════════════════════════════════════
+// 工具函式
+// ════════════════════════════════════════
+function shortItem(item) {
+  return item.replace(/《\s*/g,'').replace(/\s*》/g,'').trim().slice(0,12);
+}
+
+function parsePickupDate(pickup) {
+  if(!pickup) return null;
+  const m = String(pickup).match(/(\d{1,4})[\/\-](\d{1,2})[\/\-]?(\d{0,2})/);
+  if(!m) return null;
+  const a = parseInt(m[1]), b = parseInt(m[2]);
+  if(a > 12) return new Date(a, b-1, parseInt(m[3])||1);
+  return new Date(2026, a-1, b);
+}
+
+function pickupToDateStr(pickup) {
+  const dt = parsePickupDate(pickup);
+  if(!dt || isNaN(dt)) return null;
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+}
+</script>
+</body>
+</html>
