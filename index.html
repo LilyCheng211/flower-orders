@@ -343,7 +343,7 @@ const DEMO_ORDERS = [
   {row:9,name:"袁藝眞",phone:"",amount:11259,pickup_date:"5/22",pickup_time:"12:30",delivery:"自取",item:"《 糖果花 》x9",last5:"",paid:false,pickup_info:"",card_text:"",note:""},
 ];
 
-let allOrders = [...DEMO_ORDERS];
+let allOrders = [];
 let curYear = 2026, curMonth = 4; // 預設顯示5月
 const todayStr = new Date().toISOString().slice(0,10);
 let editingRow = null;
