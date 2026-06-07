@@ -324,7 +324,6 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
 // ⚙️ 設定（部署後換成真實 API 網址）
 // ══════════════════════════════════════
 const API_URL = "https://script.google.com/macros/s/AKfycbzYIraOqmWzWumbrcXlr94WG2lWtNjBU7mWktk3fMThY0_lO8Sa5mvhOhEKPHsjGyBt/exec";
-const SECRET  = "0987890";
 
 const STALLS = {
   "2026-05-23":["台科大"],"2026-05-30":["台大","師大","政大","北教大"],
@@ -369,22 +368,29 @@ const WARN_FIELDS = [
 ];
 
 // ── 密碼鎖 ──
-function unlock(){
+async function unlock(){
   const val = document.getElementById('lock-input').value;
-  if(val === SECRET){
-    document.getElementById('lock-screen').style.display='none';
-    sessionStorage.setItem('unlocked','1');
-    renderCalendar();
-  } else {
+  try {
+    const res = await fetch(`${API_URL}?action=login&password=${encodeURIComponent(val)}`);
+    const data = await res.json();
+    if(data.success){
+      sessionStorage.setItem('token', data.token);
+      document.getElementById('lock-screen').style.display='none';
+      renderCalendar();
+    } else {
+      document.getElementById('lock-error').classList.add('show');
+      document.getElementById('lock-input').value='';
+    }
+  } catch(e){
     document.getElementById('lock-error').classList.add('show');
     document.getElementById('lock-input').value='';
   }
 }
-if(sessionStorage.getItem('unlocked')==='1'){
+if(sessionStorage.getItem('token')){
   document.getElementById('lock-screen').style.display='none';
 }
 
-function api(params){ return fetch(`${API_URL}?secret=${SECRET}&${params}`).then(r=>r.json()); }
+function api(params){ return fetch(`${API_URL}?secret=${sessionStorage.getItem('token')}&${params}`).then(r=>r.json()); }
 
 // ── Tab 切換 ──
 function switchTab(tab, el){
