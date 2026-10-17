@@ -1,6 +1,8 @@
 // ============================================================
 // 花店訂單管理系統 - Apps Script 完整版 v2
-// 欄位：A姓名/B電話/C金額/D取花日期/E幾點取花/F配送/G品項/H末五碼/I收到款/J收花資訊/K卡片內容
+// 欄位：A姓名/B電話/C金額/D取花日期/E幾點取花/F配送/G品項/H LINE Pay 交易代碼/I收到款/J收花資訊/K卡片內容
+// H 欄在前端 JSON 仍叫 last5。電話與交易代碼要以文字寫入，避免開頭的 0 被吃掉。
+// 這份檔案要貼回 Apps Script，並建立新的部署版本，才會在線上生效。
 // ============================================================
 
 const SHEET_NAME = "訂單清單";
@@ -88,7 +90,7 @@ function getOrders() {
     orders.push({
       row:         i + 1,
       name:        name,
-      phone:       String(row[1] || ""),
+      phone:       restorePhone_(row[1]),
       amount:      row[2] || "",
       pickup_date: date,
       pickup_time: formatTimeCell(row[4]),
@@ -137,7 +139,7 @@ function addOrder(data) {
   }
 
   sheet.insertRowBefore(insertRow);
-  sheet.getRange(insertRow, 1, 1, 11).setValues([[
+  writeOrderRow_(sheet, insertRow, [
     data.name        || "",
     data.phone       || "",
     data.amount      || "",
@@ -149,14 +151,14 @@ function addOrder(data) {
     false,
     data.pickup_info || "",
     data.card_text   || "",
-  ]]);
+  ]);
   return { success: true, message: "訂單已新增於第 " + insertRow + " 行", row: insertRow };
 }
 
 function updateOrder(rowNumber, data) {
   if (!rowNumber || rowNumber < 2) return { success: false, message: "無效的行號" };
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-  sheet.getRange(rowNumber, 1, 1, 11).setValues([[
+  writeOrderRow_(sheet, rowNumber, [
     data.name        || "",
     data.phone       || "",
     data.amount      || "",
@@ -168,8 +170,34 @@ function updateOrder(rowNumber, data) {
     sheet.getRange(rowNumber, 9).getValue(),
     data.pickup_info || "",
     data.card_text   || "",
-  ]]);
+  ]);
   return { success: true };
+}
+
+// 電話、LINE Pay 交易代碼先設成純文字再寫入，試算表才不會把 0972... 存成數字
+function writeOrderRow_(sheet, rowNumber, values) {
+  const phone = String(values[1] == null ? "" : values[1]).trim();
+  const code  = String(values[7] == null ? "" : values[7]).trim();
+  const phoneCell = sheet.getRange(rowNumber, 2);
+  const codeCell  = sheet.getRange(rowNumber, 8);
+  phoneCell.setNumberFormat("@");
+  codeCell.setNumberFormat("@");
+  const row = values.slice();
+  row[1] = phone;
+  row[7] = code;
+  sheet.getRange(rowNumber, 1, 1, 11).setValues([row]);
+  // setValues 仍可能把長得像數字的字串轉成數字，文字格式設好後再寫一次這兩格
+  phoneCell.setValue(phone);
+  codeCell.setValue(code);
+}
+
+// 舊資料若已變成 9 開頭的 9 位數，讀出來時補回開頭的 0
+function restorePhone_(val) {
+  if (val instanceof Date) return "";
+  let s = String(val == null ? "" : val).trim();
+  if (/^\d+\.0+$/.test(s)) s = s.replace(/\.0+$/, "");
+  if (/^9\d{8}$/.test(s)) return "0" + s;
+  return s;
 }
 
 function deleteOrder(rowNumber) {
@@ -200,7 +228,7 @@ function syncToCalendar() {
     const item       = String(row[6] || "").trim();
     const amount     = row[2] || "";
     const delivery   = String(row[5] || "").trim();
-    const phone      = String(row[1] || "").trim();
+    const phone      = restorePhone_(row[1]);
     const pickupInfo = String(row[9] || "").trim();
 
     if (!name || !pickupDate) continue;
