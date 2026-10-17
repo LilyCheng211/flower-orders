@@ -139,6 +139,8 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
 .order-info{flex:1;min-width:0}
 .order-name{font-size:14px;font-weight:500;color:var(--ink)}
 .order-item-text{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.5}
+.order-extra{font-size:12px;color:var(--ink);margin-top:6px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.order-extra .k{color:var(--muted);margin-right:6px}
 .order-meta{display:flex;gap:6px;margin-top:5px;flex-wrap:wrap;align-items:center}
 .tag{font-size:11px;padding:2px 8px;border-radius:20px;background:var(--cream);color:var(--muted);border:1px solid var(--bdr)}
 .tag.green{background:var(--grn-l);color:var(--grn);border-color:transparent}
@@ -421,9 +423,18 @@ function showToast(msg, type=''){
 // 把客人貼上的文字拆成訂單欄位。這段不碰畫面，方便用 node 單獨測試。
 
 function restoreLeadingZero(phone){
-  let s = String(phone == null ? '' : phone).trim();
+  let s;
+  // 試算表若把電話存成數字，0972915271 會變成 972915271，有時還會變成 9.72915271E8
+  if (typeof phone === 'number' && Number.isFinite(phone)) {
+    s = String(Math.round(phone));
+  } else {
+    s = String(phone == null ? '' : phone).trim();
+    if (/^9(?:\.\d+)?[eE]\+?0*8$/.test(s)) {
+      const n = Number(s);
+      if (Number.isFinite(n)) s = String(Math.round(n));
+    }
+  }
   if (/^\d+\.0+$/.test(s)) s = s.replace(/\.0+$/, '');
-  // 試算表若把電話存成數字，0972915271 會變成 972915271
   if (/^9\d{8}$/.test(s)) return '0' + s;
   return s;
 }
@@ -516,7 +527,10 @@ function looksLikeName(s){
 }
 
 function isFieldLine(line){
-  return /^(➤|►|▶|>)?\s*(LINE\s*Pay|交易代碼|訂購人|聯絡電話|取花日期|幾點來取花|幾點取花|收花人|收件人|配送地址|黑貓地址|黑貓送花地點|送貨地址|收貨地址|地址|金額|轉帳|卡片|小卡|請給我|姓名|電話|日期|許願|特殊需求|備註)/i.test(String(line || '').trim());
+  const s = String(line || '').trim();
+  // 箭頭開頭都是欄位（寄送地址、希望到貨日期、幾點送達…），不能算進品項
+  if (/^[➤►▶>]/.test(s)) return true;
+  return /^(LINE\s*Pay|交易代碼|訂購人|聯絡電話|取花日期|幾點來取花|幾點取花|幾點送達|收花人|收件人|配送地址|黑貓地址|黑貓送花地點|送貨地址|收貨地址|寄送地址|送達地址|地址|金額|轉帳|卡片|小卡|請給我|姓名|電話|日期|希望到貨|希望上午|送達日期|許願|特殊需求|備註)/i.test(s);
 }
 
 function parseTxnCode(text){
@@ -557,7 +571,8 @@ function parseDateField(text){
 }
 
 function parseTimeField(text){
-  const labeled = text.match(/(?:幾點來取花|幾點取花|取花時間)\s*[：:＊*]?\s*([^\n➤]{0,40})/);
+  // 自取用「幾點來取花」，Lalamove 用「幾點送達」，黑貓用「希望上午／下午到」
+  const labeled = text.match(/(?:幾點來取花|幾點取花|幾點送達|取花時間|希望上午\s*[／/]\s*下午到)\s*[：:＊*]?\s*([^\n➤]{0,40})/);
   if (labeled) {
     const norm = normalizePickupTime(labeled[1]);
     if (norm) return norm;
@@ -576,11 +591,27 @@ function parseTimeField(text){
   return '';
 }
 
+// 有＝或=就用等號後面的總額（2000＋350＝2350 → 2350）；沒有就用第一個數字（5000＋運費實報實銷 → 5000）
+function amountFromClause(clause){
+  if (/[＝=]/.test(clause)) {
+    const re = /[＝=]\s*(\d{2,7})/g;
+    let last = null;
+    let m;
+    while ((m = re.exec(clause))) last = m[1];
+    if (last) return parseInt(last, 10);
+  }
+  const first = clause.match(/(\d{2,7})/);
+  return first ? parseInt(first[1], 10) : null;
+}
+
 function parseAmountList(text){
   const nums = [];
-  const re = /(?:轉帳金額|金額)\s*[：:＊*]?\s*(\d{2,7})/g;
+  const re = /(?:轉帳金額|金額)\s*[：:＊*]?\s*([^\n]+)/g;
   let m;
-  while ((m = re.exec(text))) nums.push(parseInt(m[1], 10));
+  while ((m = re.exec(text))) {
+    const n = amountFromClause(m[1]);
+    if (n != null) nums.push(n);
+  }
   return nums;
 }
 
@@ -651,29 +682,27 @@ function extractNameFromPart(part){
 }
 
 function parseRecipientInfo(text, orderer){
-  const chunks = [];
-  function take(re, build){
-    const m = text.match(re);
-    if (!m) return;
-    let v = m[1].trim().replace(/[（(].*$/, '').trim();
-    if (!v) return;
-    const phone = normalizePhoneToken(v);
-    if (phone && orderer.phone && phone === orderer.phone) return;
-    if (orderer.name && v === orderer.name) return;
-    const line = build(v, phone);
-    if (line) chunks.push(line);
+  // 收花資訊只要收件人本人：姓名、電話、地址，中間用空白接起來
+  let name = '';
+  let phone = '';
+  let address = '';
+
+  const nameMatch = text.match(/(?:收花人|收件人)(?:姓名|名字)?\s*[：:]\s*([^\n➤]{1,20})/);
+  if (nameMatch) {
+    const v = nameMatch[1].trim().replace(/[（(].*$/, '').trim();
+    if (v && !/電話|地址/.test(v) && !/\d{5,}/.test(v) && v !== (orderer.name || '')) name = v;
   }
-  // 只認收花人、收件人、地址這類明確標籤，不抓訂購人自己的姓名電話
-  take(/(?:配送地址|黑貓送花地點|黑貓地址|送貨地址|收貨地址|地址)\s*[：:]\s*([^\n➤]{4,80})/, function(v){ return '地址：' + v; });
-  take(/(?:收花人|收件人)\s*[：:]\s*([^\n➤]{1,20})/, function(v){
-    if (/電話|地址/.test(v)) return '';
-    if (/\d{5,}/.test(v)) return '';
-    return '收花人：' + v.trim();
-  });
-  take(/(?:收花人電話|收件人電話)\s*[：:]\s*(0?9\d{2}[-\s]?\d{3}[-\s]?\d{3})/, function(v, phone){
-    return '收花人電話：' + (phone || normalizePhoneToken(v) || v);
-  });
-  return chunks.join('｜');
+
+  const phoneMatch = text.match(/(?:收花人電話|收件人電話)\s*[：:]\s*(0?9\d{2}[-\s]?\d{3}[-\s]?\d{3})/);
+  if (phoneMatch) {
+    const p = normalizePhoneToken(phoneMatch[1]);
+    if (p && p !== (orderer.phone || '')) phone = p;
+  }
+
+  const addrMatch = text.match(/(?:配送地址|黑貓送花地點|黑貓地址|送貨地址|收貨地址|寄送地址|送達地址|地址)\s*[：:]\s*([^\n➤]{4,80})/);
+  if (addrMatch) address = addrMatch[1].trim().replace(/[（(].*$/, '').trim();
+
+  return [name, phone, address].filter(Boolean).join(' ');
 }
 
 function isPlaceNote(line){
@@ -719,7 +748,12 @@ function parseCard(text){
 }
 
 function guessDelivery(raw){
-  if (/黑貓/.test(raw)) return /黑貓\s*下午/.test(raw) ? '黑貓 下午' : '黑貓 上午';
+  if (/黑貓/.test(raw)) {
+    // 「希望上午／下午到：下午」整行裡本來就有下午兩個字，要看冒號後面填的是哪一個
+    const slot = raw.match(/希望上午\s*[／/]\s*下午到\s*[：:＊*]?\s*(上午|下午|早上|傍晚|晚上)/);
+    if (slot) return /下午|傍晚|晚上/.test(slot[1]) ? '黑貓 下午' : '黑貓 上午';
+    return /黑貓\s*下午/.test(raw) ? '黑貓 下午' : '黑貓 上午';
+  }
   if (/親自外送/.test(raw)) return '親自外送';
   if (/[Ll]ala/.test(raw)) return /來取/.test(raw) ? 'Lala 來取' : 'Lala 代叫';
   if (/全家/.test(raw)) return '全家 自取';
@@ -760,7 +794,7 @@ function parseOrderMessage(raw){
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i].trim();
     if (!part) continue;
-    if (!result.name && !/[／《》・｜＋]/.test(part)) {
+    if (!result.name && !/[／《》・｜＋]/.test(part) && !/收花人|收件人/.test(part)) {
       const name = extractNameFromPart(part);
       if (name) result.name = name;
     }
@@ -1049,27 +1083,31 @@ function showDetail(ds, orders, stalls){
         <div class="order-meta"><span class="tag orange">出攤日</span></div>
       </div>
     </div>`).join('');
-  html+=orders.map((o,i)=>`
+  html+=orders.map((o,i)=>{
+    const phone = restoreLeadingZero(o.phone);
+    return `
     <div class="order-row" id="orow-${o.row}">
       <div class="order-idx">${stalls.length+i+1}</div>
       <div class="order-info">
-        <div class="order-name">${o.name}${o.phone?` <span style="font-weight:400;font-size:12px;color:var(--muted)">${o.phone}</span>`:''}</div>
+        <div class="order-name">${o.name}${phone?` <span style="font-weight:400;font-size:12px;color:var(--muted)">${phone}</span>`:''}</div>
         <div class="order-item-text">${o.item}</div>
         <div class="order-meta">
           ${o.pickup_time?`<span class="tag">${o.pickup_date} ${o.pickup_time}</span>`:`<span class="tag">${o.pickup_date}</span>`}
           ${o.delivery?`<span class="tag${o.delivery.includes('黑貓')||o.delivery.includes('Lala')?' green':''}">${o.delivery}</span>`:''}
           ${o.amount?`<span class="tag">$${parseFloat(o.amount).toLocaleString()}</span>`:''}
           ${o.last5?`<span class="tag">LINE Pay 交易代碼 ${o.last5}</span>`:''}
-          ${o.pickup_info?`<span class="tag green" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.pickup_info}</span>`:''}
           ${o.card_text?`<span class="tag purple">💌 ${o.card_text.slice(0,20)}</span>`:''}
         </div>
+        ${o.pickup_info?`<div class="order-extra"><span class="k">收花資訊</span>${escHtml(o.pickup_info)}</div>`:''}
+        ${o.note?`<div class="order-extra"><span class="k">備註</span>${escHtml(o.note)}</div>`:''}
         <div class="order-actions">
           <span class="paid-toggle${o.paid?' checked':''}" id="paid-label-${o.row}" onclick="togglePaid(${o.row},${o.paid})">${o.paid?'✓ 已收款':'未收款，點擊標記'}</span>
           <button class="edit-btn" onclick="openEditModal(${o.row})">✏️ 編輯</button>
           <button class="delete-btn" onclick="deleteOrder(${o.row},'${o.name.replace(/'/g,"\\'")}')">✕ 刪除</button>
         </div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   document.getElementById('detail-orders').innerHTML=html;
   document.getElementById('detail-panel').className='detail-panel open';
 }
@@ -1082,7 +1120,7 @@ function openEditModal(rowNum){
   if(!o) return;
   editingRow=rowNum;
   document.getElementById('e-name').value=o.name||'';
-  document.getElementById('e-phone').value=o.phone||'';
+  document.getElementById('e-phone').value=restoreLeadingZero(o.phone||'');
   document.getElementById('e-last5').value=o.last5||'';
   document.getElementById('e-amount').value=o.amount||'';
   document.getElementById('e-pickup-date').value=o.pickup_date||'';
@@ -1122,13 +1160,13 @@ async function saveEdit(){
     if(json.success){
       showToast('✓ 已更新','success');
       const o=allOrders.find(x=>x.row===editingRow);
-      if(o)Object.assign(o,{...data,pickup_info:data.pickup_info,card_text:data.card_text});
+      if(o)Object.assign(o,data);
       closeEditModal(); closeDetail(); renderStats(); renderCalendar();
     } else showToast('更新失敗：'+json.message,'error');
   }catch(e){
     // 本地測試：直接更新 demo 資料
     const o=allOrders.find(x=>x.row===editingRow);
-    if(o)Object.assign(o,{...data,pickup_info:data.pickup_info,card_text:data.card_text});
+    if(o)Object.assign(o,data);
     showToast('（本地測試）已更新 demo 資料','success');
     closeEditModal(); closeDetail(); renderStats(); renderCalendar();
   }
@@ -1159,6 +1197,10 @@ async function deleteOrder(rowNum, name){
 
 // ── 工具 ──
 function shortItem(item){ return item.replace(/《\s*/g,'').replace(/\s*》/g,'').trim().slice(0,12); }
+
+function escHtml(s){
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
 // 金額格子可能是 1390、"1,390"、"$1390"。抓出數字；沒有就當 0。
 function parseAmount(v){

@@ -159,6 +159,84 @@ eq(g.pickup_date, '5/7', '舊一行格式：日期');
 eq(g.pickup_time, '18:00', '舊一行格式：時間');
 eq(g.info, '', '舊一行格式：不把電話放進收花資訊');
 
+const blackCat = [
+  '《 生日花束 》小型｜粉色系',
+  '韓式風・粉／白配色',
+  '霧面包裝＋緞帶',
+  '➤ 金額：2000＋350（黑貓包材＋運費）＝2350',
+  '➤ LINE Pay 交易代碼：T1234',
+  '➤ 訂購人姓名：測試王小美',
+  '➤ 聯絡電話：0911222333',
+  '➤ 收件人姓名：測試陳大華',
+  '➤ 收件人電話：0922333444',
+  '➤ 寄送地址：台中市西區民生路100號5樓',
+  '➤ 希望到貨日期：11/20',
+  '➤ 希望上午／下午到：上午'
+].join('\n');
+const h = parse(blackCat);
+eq(h.name, '測試王小美', '黑貓：訂購人');
+eq(h.phone, '0911222333', '黑貓：訂購人電話');
+eq(h.last5, 'T1234', '黑貓：交易代碼');
+eq(h.amount, '2350', '黑貓：等號後面的總額');
+eq(h.pickup_date, '11/20', '黑貓：希望到貨日期');
+eq(h.pickup_time, '上午', '黑貓：希望上午到');
+eq(h.delivery, '黑貓 上午', '黑貓：上午配送');
+eq(h.item, '《生日花束》小型｜粉色系，韓式風・粉／白配色，霧面包裝＋緞帶', '黑貓：品項只有規格');
+assert(h.item.indexOf('➤') < 0, '黑貓：品項沒有箭頭欄位');
+assert(h.item.indexOf('寄送地址') < 0, '黑貓：品項沒有寄送地址');
+assert(h.item.indexOf('希望到貨') < 0, '黑貓：品項沒有到貨日期');
+eq(h.info, '測試陳大華 0922333444 台中市西區民生路100號5樓', '黑貓：收花資訊含姓名電話地址');
+assert(h.info.indexOf('0911222333') < 0, '黑貓：收花資訊不含訂購人電話');
+
+const blackCatPm = blackCat.replace('希望上午／下午到：上午', '希望上午／下午到：下午');
+eq(parse(blackCatPm).delivery, '黑貓 下午', '黑貓：下午配送');
+eq(parse(blackCatPm).pickup_time, '下午', '黑貓：希望下午到');
+
+const asciiTotal = '《 花束 》小\n➤ 金額：2000+350=2350';
+eq(parse(asciiTotal).amount, '2350', '半形等號也用總額');
+
+const lala = [
+  '《 求婚花束 》中型｜玫瑰為主',
+  '➤ 金額：5000＋Lalamove 運費（實報實銷）',
+  '➤ 訂購人姓名：王小明',
+  '➤ 聯絡電話：0912345678',
+  '➤ 收件人姓名：林小華',
+  '➤ 收件人電話：0911000222',
+  '➤ 送達地址：台北市大安區復興南路1號',
+  '➤ 送達日期：11/9',
+  '➤ 幾點送達：下午3點'
+].join('\n');
+const i = parse(lala);
+eq(i.amount, '5000', 'Lalamove：沒有等號就用前面的金額');
+eq(i.item, '《求婚花束》中型｜玫瑰為主', 'Lalamove：送達欄位不進品項');
+assert(i.item.indexOf('送達') < 0, 'Lalamove：品項沒有送達');
+eq(i.pickup_date, '11/9', 'Lalamove：送達日期');
+eq(i.pickup_time, '15:00', 'Lalamove：幾點送達');
+eq(i.delivery, 'Lala 代叫', 'Lalamove：代叫');
+eq(i.info, '林小華 0911000222 台北市大安區復興南路1號', 'Lalamove：收花資訊');
+eq(i.name, '王小明', 'Lalamove：訂購人');
+eq(i.phone, '0912345678', 'Lalamove：訂購人電話');
+
+const selfPickup = [
+  '《 小花束 》粉色系',
+  '➤ 金額：800',
+  '➤ 訂購人姓名：王小明',
+  '➤ 聯絡電話：0912345678',
+  '➤ 取花日期：11/20',
+  '➤ 幾點來取花：下午3點半'
+].join('\n');
+const j = parse(selfPickup);
+eq(j.item, '《小花束》粉色系', '自取：取花欄位不進品項');
+eq(j.amount, '800', '自取：金額');
+eq(j.pickup_date, '11/20', '自取：取花日期');
+eq(j.pickup_time, '15:30', '自取：幾點來取花');
+eq(j.info, '', '自取：沒有收花資訊');
+eq(j.delivery, '', '自取：沒寫配送就不猜');
+
+eq(fixPhone(972915271), '0972915271', '數字 972915271 補 0');
+eq(fixPhone('9.72915271E8'), '0972915271', '科學記號補 0');
+eq(fixPhone('9.72915271e+8'), '0972915271', '科學記號加號補 0');
+
 if (failed) {
   console.error('共 ' + failed + ' 項失敗');
   process.exit(1);
