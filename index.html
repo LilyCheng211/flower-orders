@@ -76,6 +76,11 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
 .field select.warn{border:1.5px solid var(--red);background:var(--red-l)}
 .field-hint{font-size:11px;color:var(--red);margin-top:4px;display:none}
 .field-hint.show{display:block}
+.field-note{font-size:11px;color:var(--terra2);margin-top:4px;display:none}
+.field-note.show{display:block}
+.field.emphasize textarea{border-color:var(--terra);background:#fff6f1}
+.field.emphasize label{color:var(--terra2)}
+.field label.as-is{text-transform:none;letter-spacing:0}
 .sub-btn{margin-top:1.5rem;width:100%;padding:14px;background:var(--terra);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:500;font-family:'Noto Sans TC',sans-serif;cursor:pointer;transition:background .2s;letter-spacing:.05em}
 .sub-btn:hover{background:var(--terra2)}
 .sub-btn:disabled{background:var(--faint);cursor:not-allowed}
@@ -195,7 +200,7 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
     <div class="fgrid">
       <div class="field"><label>姓名</label><input type="text" id="e-name" placeholder="客戶姓名"></div>
       <div class="field"><label>電話</label><input type="tel" id="e-phone" placeholder="09xx-xxx-xxx"></div>
-      <div class="field"><label>末五碼</label><input type="text" id="e-last5" placeholder="末五碼"></div>
+      <div class="field"><label class="as-is">LINE Pay 交易代碼</label><input type="text" id="e-last5" placeholder="例如 L7918"></div>
       <div class="field"><label>金額</label><input type="number" id="e-amount" placeholder="1390"></div>
     </div>
     <div class="fsep">訂單內容</div>
@@ -204,7 +209,7 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
       <div class="field"><label>幾點取花</label><input type="text" id="e-pickup-time" placeholder="13:00 / 下午 / 寄出"></div>
       <div class="field">
         <label>配送方式</label>
-        <select id="e-delivery">
+        <select id="e-delivery" onchange="checkDeliveryMatch('e')">
           <option>自取</option><option>全家 自取</option>
           <option>黑貓 上午</option><option>黑貓 下午</option>
           <option>Lala 來取</option><option>Lala 代叫</option>
@@ -212,7 +217,7 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
         </select>
       </div>
       <div class="field"><label>品項</label><input type="text" id="e-item" placeholder="糖果花 許願藍色系"></div>
-      <div class="field full"><label>收花資訊</label><textarea id="e-info" placeholder="黑貓地址 / 收花人 / Lala 地點..."></textarea></div>
+      <div class="field full" id="e-info-field"><label>收花資訊<span class="opt">選填</span></label><textarea id="e-info" placeholder="黑貓、Lala、親自外送才需要：收花人、電話、地址"></textarea><div class="field-note" id="e-info-hint">黑貓、Lala、親自外送建議填寫收花人、電話與地址（仍可先不填）</div></div>
     </div>
     <div class="fsep">附加資訊</div>
     <div class="fgrid">
@@ -239,7 +244,7 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
   <p class="section-sub">貼上客人回覆文字自動解析，或手動填寫欄位</p>
 
   <div class="smart-lbl">智慧貼上 <span class="smart-badge">✨ 自動解析</span></div>
-  <textarea class="smart-box" id="paste-box" placeholder="把客人傳來的訂單文字貼在這裡...&#10;&#10;例如：李品諺 0952288391 64364 5/7 18:00&#10;或含黑貓地址的完整訂單格式"></textarea>
+  <textarea class="smart-box" id="paste-box" placeholder="把客人回覆貼在這裡...&#10;&#10;➤ LINE Pay 交易代碼：L1234&#10;➤ 訂購人姓名：王小明&#10;➤ 聯絡電話：0912345678&#10;➤ 取花日期：11/20&#10;➤ 幾點來取花：下午3點半"></textarea>
   <button class="smart-btn" onclick="doParse()">✨ 自動解析並填入</button>
 
   <div class="divider"><div class="div-line"></div><div class="div-txt">解析後請補充空白欄位再送出</div><div class="div-line"></div></div>
@@ -249,7 +254,7 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
     <div class="fgrid">
       <div class="field"><label>姓名 *</label><input type="text" id="f-name" placeholder="客戶姓名 / IG 帳號"><div class="field-hint" id="h-name">請手動補充</div></div>
       <div class="field"><label>電話<span class="opt">選填</span></label><input type="tel" id="f-phone" placeholder="09xx-xxx-xxx"><div class="field-hint" id="h-phone">請手動補充</div></div>
-      <div class="field"><label>末五碼<span class="opt">選填</span></label><input type="text" id="f-last5" placeholder="轉帳末五碼"><div class="field-hint" id="h-last5">請手動補充</div></div>
+      <div class="field"><label class="as-is">LINE Pay 交易代碼<span class="opt">選填</span></label><input type="text" id="f-last5" placeholder="例如 L7918"><div class="field-hint" id="h-last5">請手動補充</div></div>
       <div class="field"><label>金額<span class="opt">選填</span></label><input type="number" id="f-amount" placeholder="1390"><div class="field-hint" id="h-amount">請手動補充</div></div>
     </div>
     <div class="fsep">訂單內容</div>
@@ -264,13 +269,12 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
           <option>Lala 來取</option><option>Lala 代叫</option>
           <option>親自外送</option><option>TBC</option>
         </select>
-        <div class="field-hint" id="h-delivery">有收花資訊，請確認配送方式是否為黑貓或 Lala</div>
       </div>
       <div class="field"><label>品項 *</label><input type="text" id="f-item" placeholder="糖果花 許願藍色系"><div class="field-hint" id="h-item">請手動補充</div></div>
-      <div class="field full">
+      <div class="field full" id="f-info-field">
         <label>收花資訊<span class="opt">選填</span></label>
-        <textarea id="f-info" placeholder="黑貓地址 / 收花人 / 超商代碼 / Lala 地點..." oninput="checkDeliveryMatch()"></textarea>
-        <div class="field-hint" id="h-info">請手動補充</div>
+        <textarea id="f-info" placeholder="黑貓、Lala、親自外送才需要。全家店名可寫在備註，或直接寫在這裡"></textarea>
+        <div class="field-note" id="f-info-hint">黑貓、Lala、親自外送建議填寫收花人、電話與地址（仍可先不填）</div>
       </div>
     </div>
     <div class="fsep">附加資訊</div>
@@ -408,122 +412,442 @@ function showToast(msg, type=''){
   setTimeout(()=>{ t.className='toast'; }, 3000);
 }
 
-// ── 收花資訊連動配送方式 ──
-function checkDeliveryMatch(){
-  const info = document.getElementById('f-info').value.trim();
-  const delivery = document.getElementById('f-delivery').value;
-  const isPickup = ['自取','全家 自取','親自外送'].includes(delivery);
-  const sel = document.getElementById('f-delivery');
-  const hint = document.getElementById('h-delivery');
-  if(info !== '' && isPickup){
-    sel.classList.add('warn'); hint.classList.add('show');
-  } else {
-    sel.classList.remove('warn'); hint.classList.remove('show');
-  }
+/*__PARSER_START__*/
+// 把客人貼上的文字拆成訂單欄位。這段不碰畫面，方便用 node 單獨測試。
+
+function restoreLeadingZero(phone){
+  let s = String(phone == null ? '' : phone).trim();
+  if (/^\d+\.0+$/.test(s)) s = s.replace(/\.0+$/, '');
+  // 試算表若把電話存成數字，0972915271 會變成 972915271
+  if (/^9\d{8}$/.test(s)) return '0' + s;
+  return s;
 }
 
-// ── 自動猜測配送方式 ──
+function normalizePhoneToken(raw){
+  if (!raw) return '';
+  const d = String(raw).replace(/[-\s]/g, '');
+  if (/^09\d{8}$/.test(d)) return d;
+  if (/^9\d{8}$/.test(d)) return '0' + d;
+  return '';
+}
+
+function padTime(h, min){
+  return String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0');
+}
+
+// 早上、上午維持原點；中午 1 到 10 點算下午；下午、傍晚、晚上加 12 小時
+function applyPeriod(h, s){
+  if (/晚上/.test(s)) {
+    if (h === 12) return 0;
+    if (h < 12) return h + 12;
+    return h;
+  }
+  if (/下午|傍晚/.test(s)) {
+    if (h < 12) return h + 12;
+    return h;
+  }
+  if (/中午/.test(s)) {
+    if (h >= 1 && h <= 10) return h + 12;
+    return h;
+  }
+  if (/早上|上午/.test(s)) {
+    if (h === 12) return 0;
+    return h;
+  }
+  return h;
+}
+
+function normalizePickupTime(input){
+  if (!input) return '';
+  let s = String(input).trim();
+  s = s.replace(/[（(][^）)]*[）)]?/g, '').trim();
+  s = s.replace(/[，,；;].*$/, '').trim();
+  if (!s || /填一個|準時|勿提早|順序錯亂|敬請/.test(s)) return '';
+  if (/^(早上|上午|中午|下午|傍晚|晚上|寄出)$/.test(s)) return s;
+
+  const hm = s.match(/(\d{1,2})\s*[:：]\s*(\d{2})/);
+  if (hm) {
+    let h = parseInt(hm[1], 10);
+    const min = parseInt(hm[2], 10);
+    if (h > 23 || min > 59) return '';
+    h = applyPeriod(h, s);
+    return padTime(h, min);
+  }
+
+  const zh = s.match(/(\d{1,2})\s*點\s*(半|(\d{1,2})\s*分)?/);
+  if (zh) {
+    let h = parseInt(zh[1], 10);
+    let min = 0;
+    if (zh[2] && zh[2].indexOf('半') >= 0) min = 30;
+    else if (zh[3]) min = parseInt(zh[3], 10);
+    // 「下午31點半」多打了一個 1，合理讀法是下午 3 點半
+    if (h > 23 && /早上|上午|中午|下午|傍晚|晚上/.test(s)) {
+      const digits = String(zh[1]);
+      if (digits.length === 2 && digits.charAt(1) === '1' && min === 30) {
+        h = parseInt(digits.charAt(0), 10);
+      }
+    }
+    if (h > 23 || min > 59) return '';
+    h = applyPeriod(h, s);
+    return padTime(h, min);
+  }
+  return '';
+}
+
+function isReservedWord(t){
+  return /^(請給我|交易代碼|訂購人|訂購人姓名|姓名|名字|聯絡電話|電話|取花日期|取花|日期|幾點來取花|幾點取花|金額|自取|全家|黑貓|外送|晚上|下午|上午|早上|中午|傍晚|準時|寄出|LINE|Pay|Lala|TBC)$/i.test(String(t || '').trim());
+}
+
+function looksLikeName(s){
+  if (!s) return false;
+  const t = String(s).trim();
+  if (t.length < 2 || t.length > 20) return false;
+  if (/[0-9／/：:➤《》｜・＋+]/.test(t)) return false;
+  if (isReservedWord(t)) return false;
+  if (/^[\u4e00-\u9fff]{2,5}$/.test(t)) return true;
+  // 至少三個英文字，避免把花束裡的 me 當成姓名
+  if (/^[A-Za-z][A-Za-z .'-]{2,20}$/.test(t) && !/^(line|pay|lala|tbc)$/i.test(t)) return true;
+  return false;
+}
+
+function isFieldLine(line){
+  return /^(➤|►|▶|>)?\s*(LINE\s*Pay|交易代碼|訂購人|聯絡電話|取花日期|幾點來取花|幾點取花|收花人|收件人|配送地址|黑貓地址|黑貓送花地點|送貨地址|收貨地址|地址|金額|轉帳|卡片|小卡|請給我|姓名|電話|日期|許願|特殊需求|備註)/i.test(String(line || '').trim());
+}
+
+function parseTxnCode(text){
+  const patterns = [
+    /(?:LINE\s*Pay\s*)?交易代碼\s*[：:]\s*([A-Za-z0-9]{3,16})/i,
+    /(?:LINE\s*Pay\s*)?交易代碼\s+([A-Za-z0-9]{3,16})/i,
+    /(?:轉帳末五碼|末五碼|後五碼)\s*[：:]?\s*([A-Za-z0-9]{3,16})/
+  ];
+  for (let i = 0; i < patterns.length; i++) {
+    const m = text.match(patterns[i]);
+    if (m) return m[1];
+  }
+  const loose = text.match(/(?:^|[\s／/，,])([A-Za-z]\d{4})(?=$|[\s／/，,\n])/m);
+  return loose ? loose[1] : '';
+}
+
+function parseOrdererPhone(text){
+  // 先拿掉收花人電話，避免把收件人的手機當成訂購人
+  const stripped = text.replace(/(?:收花人|收件人)電話\s*[：:＊*]?\s*0?9[\d\-\s]{8,14}/g, ' ');
+  const labeled = stripped.match(/(?:聯絡電話|訂購人電話|電話)\s*[：:＊*]?\s*(0?9\d{2}[-\s]?\d{3}[-\s]?\d{3})/);
+  if (labeled) {
+    const p = normalizePhoneToken(labeled[1]);
+    if (p) return p;
+  }
+  const all = stripped.match(/0?9\d{2}[-\s]?\d{3}[-\s]?\d{3}/g) || [];
+  for (let i = 0; i < all.length; i++) {
+    const p = normalizePhoneToken(all[i]);
+    if (p) return p;
+  }
+  return '';
+}
+
+function parseDateField(text){
+  const labeled = text.match(/(?:取花日期|寄出日期|日期)\s*[：:＊*]?\s*(\d{1,2}\s*\/\s*\d{1,2})/);
+  if (labeled) return labeled[1].replace(/\s/g, '');
+  const all = text.match(/\d{1,2}\/\d{1,2}/g);
+  return all ? all[0] : '';
+}
+
+function parseTimeField(text){
+  const labeled = text.match(/(?:幾點來取花|幾點取花|取花時間)\s*[：:＊*]?\s*([^\n➤]{0,40})/);
+  if (labeled) {
+    const norm = normalizePickupTime(labeled[1]);
+    if (norm) return norm;
+  }
+  // 時段詞要留在同一段裡，才知道晚上 6 點是 18:00，不是 06:00
+  const any = text.match(/(早上|上午|中午|下午|傍晚|晚上)\s*\d{1,2}\s*點\s*(?:半|\d{1,2}\s*分)?/);
+  if (any) {
+    const norm = normalizePickupTime(any[0]);
+    if (norm) return norm;
+  }
+  const hhmm = text.match(/(?:^|[^\d])(\d{1,2}\s*[:：]\s*\d{2})(?!\d)/m);
+  if (hhmm) {
+    const norm = normalizePickupTime(hhmm[1]);
+    if (norm) return norm;
+  }
+  return '';
+}
+
+function parseAmountList(text){
+  const nums = [];
+  const re = /(?:轉帳金額|金額)\s*[：:＊*]?\s*(\d{2,7})/g;
+  let m;
+  while ((m = re.exec(text))) nums.push(parseInt(m[1], 10));
+  return nums;
+}
+
+function parseBouquetBlocks(text){
+  const re = /《\s*([^》]+?)\s*》/g;
+  const found = [];
+  let m;
+  while ((m = re.exec(text))) {
+    found.push({
+      name: m[1].replace(/\s+/g, ''),
+      start: m.index,
+      end: m.index + m[0].length
+    });
+  }
+  if (!found.length) return { item: '', amounts: [] };
+  const pieces = [];
+  const amounts = [];
+  for (let i = 0; i < found.length; i++) {
+    const sliceEnd = i + 1 < found.length ? found[i + 1].start : text.length;
+    const desc = text.slice(found[i].end, sliceEnd);
+    parseAmountList(desc).forEach(function(n){ amounts.push(n); });
+    const lines = desc.split('\n').map(function(s){ return s.trim(); }).filter(function(line){
+      if (!line) return false;
+      if (/^[（(]/.test(line)) return false;
+      if (isFieldLine(line)) return false;
+      if (/(?:轉帳金額|金額)\s*[：:]/.test(line)) return false;
+      return true;
+    });
+    const body = lines.join('，');
+    pieces.push(body ? '《' + found[i].name + '》' + body : '《' + found[i].name + '》');
+  }
+  // 多個花束用「；」接成一行，金額另外加總
+  return { item: pieces.join('；'), amounts: amounts };
+}
+
+function matchLabeledName(text){
+  const labels = ['訂購人姓名', '訂購人', '我是', '名字', '姓名'];
+  for (let i = 0; i < labels.length; i++) {
+    const re = new RegExp(labels[i] + '\\s*[：:＊*]?\\s*([^\\n➤／/]{1,30})');
+    const m = text.match(re);
+    if (!m) continue;
+    let v = m[1].trim().replace(/[（(].*$/, '').trim();
+    v = v.split(/\s+/)[0];
+    if (looksLikeName(v)) return v;
+  }
+  return '';
+}
+
+function extractNameFromPart(part){
+  if (!part || /[《》｜・＋+]/.test(part)) return '';
+  let rest = part
+    .replace(/➤/g, ' ')
+    .replace(/LINE\s*Pay/ig, ' ')
+    .replace(/(交易代碼|訂購人姓名|訂購人|聯絡電話|取花日期|幾點來取花|幾點取花|收花人電話|收件人電話|收花人|收件人|配送地址|姓名|名字|電話|日期|金額)\s*[：:]?/g, ' ')
+    .replace(/0?9\d{2}[-\s]?\d{3}[-\s]?\d{3}/g, ' ')
+    .replace(/[A-Za-z]\d{4}/g, ' ')
+    .replace(/\d{1,2}\/\d{1,2}/g, ' ')
+    .replace(/(早上|上午|中午|下午|傍晚|晚上)\s*\d{1,2}\s*點\s*(半|\d{1,2}\s*分)?/g, ' ')
+    .replace(/\d{1,2}\s*[:：]\s*\d{2}/g, ' ')
+    .replace(/\d{1,2}\s*點\s*(半|\d{1,2}\s*分)?/g, ' ')
+    .replace(/[：:／/]/g, ' ')
+    .trim();
+  const bits = rest.split(/\s+/).filter(Boolean);
+  for (let i = 0; i < bits.length; i++) {
+    if (looksLikeName(bits[i])) return bits[i];
+  }
+  return '';
+}
+
+function parseRecipientInfo(text, orderer){
+  const chunks = [];
+  function take(re, build){
+    const m = text.match(re);
+    if (!m) return;
+    let v = m[1].trim().replace(/[（(].*$/, '').trim();
+    if (!v) return;
+    const phone = normalizePhoneToken(v);
+    if (phone && orderer.phone && phone === orderer.phone) return;
+    if (orderer.name && v === orderer.name) return;
+    const line = build(v, phone);
+    if (line) chunks.push(line);
+  }
+  // 只認收花人、收件人、地址這類明確標籤，不抓訂購人自己的姓名電話
+  take(/(?:配送地址|黑貓送花地點|黑貓地址|送貨地址|收貨地址|地址)\s*[：:]\s*([^\n➤]{4,80})/, function(v){ return '地址：' + v; });
+  take(/(?:收花人|收件人)\s*[：:]\s*([^\n➤]{1,20})/, function(v){
+    if (/電話|地址/.test(v)) return '';
+    if (/\d{5,}/.test(v)) return '';
+    return '收花人：' + v.trim();
+  });
+  take(/(?:收花人電話|收件人電話)\s*[：:]\s*(0?9\d{2}[-\s]?\d{3}[-\s]?\d{3})/, function(v, phone){
+    return '收花人電話：' + (phone || normalizePhoneToken(v) || v);
+  });
+  return chunks.join('｜');
+}
+
+function isPlaceNote(line){
+  const s = String(line || '').trim();
+  if (s.length < 4 || s.length > 40) return false;
+  if (/[：:➤《》]/.test(s)) return false;
+  if (/0?9\d{8}/.test(s)) return false;
+  if (isFieldLine(s)) return false;
+  return /店|門市|全家|7-11|萊爾富|超商/.test(s);
+}
+
+function parseNotes(text){
+  const notes = [];
+  const wish = text.match(/許願色系\s*[：:]\s*([^\n➤]{1,80})/);
+  if (wish) notes.push('許願色系：' + wish[1].trim());
+  else {
+    const w2 = text.match(/許願\s+([^\n➤《》]{1,80})/);
+    if (w2) notes.push('許願：' + w2[1].trim());
+  }
+  const extra = text.match(/(?:特殊需求|備註)\s*[：:]\s*([^\n➤]{1,100})/);
+  if (extra) notes.push(extra[1].trim());
+
+  function pushPlace(chunk){
+    const s = String(chunk || '').trim();
+    if (!isPlaceNote(s)) return;
+    if (notes.indexOf(s) >= 0) return;
+    notes.push(s);
+  }
+  text.split(/[\n／/]+/).forEach(pushPlace);
+  // 店名黏在同一行後面時，另外抓出來放進備註
+  const inline = text.match(/[\u4e00-\u9fff]{2,12}(?:全家|萊爾富|7-11)[\u4e00-\u9fff]{0,12}店?/);
+  if (inline) {
+    const around = text.slice(Math.max(0, inline.index - 12), inline.index);
+    const already = notes.some(function(n){ return n.indexOf(inline[0]) >= 0; });
+    if (!already && !/地址\s*[：:]/.test(around)) notes.push(inline[0]);
+  }
+  return notes.join('；');
+}
+
+function parseCard(text){
+  const m = text.match(/(?:卡片內容|小卡)\s*[：:]\s*\n?([\s\S]+?)(?=\n\s*(?:➤|={3,})|$)/);
+  return m ? m[1].trim() : '';
+}
+
 function guessDelivery(raw){
-  if(/黑貓/.test(raw)) return '黑貓 上午';
-  if(/[Ll]ala/.test(raw)) return 'Lala 代叫';
-  if(/全家/.test(raw)) return '全家 自取';
-  return null;
+  if (/黑貓/.test(raw)) return /黑貓\s*下午/.test(raw) ? '黑貓 下午' : '黑貓 上午';
+  if (/親自外送/.test(raw)) return '親自外送';
+  if (/[Ll]ala/.test(raw)) return /來取/.test(raw) ? 'Lala 來取' : 'Lala 代叫';
+  if (/全家/.test(raw)) return '全家 自取';
+  if (/自取/.test(raw)) return '自取';
+  return '';
+}
+
+function deliveryNeedsInfo(delivery){
+  return /黑貓|Lala|lala|親自外送/.test(delivery || '');
+}
+
+function parseOrderMessage(raw){
+  const text = String(raw || '').replace(/\r\n/g, '\n').trim();
+  const result = {
+    name: '', phone: '', last5: '', amount: '',
+    pickup_date: '', pickup_time: '', item: '',
+    info: '', card: '', note: '', delivery: ''
+  };
+  if (!text) return result;
+
+  const bouquets = parseBouquetBlocks(text);
+  result.item = bouquets.item;
+  if (bouquets.amounts.length) {
+    result.amount = String(bouquets.amounts.reduce(function(a, b){ return a + b; }, 0));
+  } else {
+    const amounts = parseAmountList(text);
+    if (amounts.length) result.amount = String(amounts.reduce(function(a, b){ return a + b; }, 0));
+  }
+
+  result.last5 = parseTxnCode(text);
+  result.name = matchLabeledName(text);
+  result.phone = parseOrdererPhone(text);
+  result.pickup_date = parseDateField(text);
+  result.pickup_time = parseTimeField(text);
+
+  // 只依換行與半形斜線切開。全形「／」是花色（白／粉／鵝黃），切開會把配色誤認成姓名
+  const parts = text.split(/[/\n]+/);
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i].trim();
+    if (!part) continue;
+    if (!result.name && !/[／《》・｜＋]/.test(part)) {
+      const name = extractNameFromPart(part);
+      if (name) result.name = name;
+    }
+    if (!result.phone && !/收花人|收件人/.test(part)) {
+      const phone = normalizePhoneToken((part.match(/0?9\d{2}[-\s]?\d{3}[-\s]?\d{3}/) || [''])[0]);
+      if (phone) result.phone = phone;
+    }
+    if (!result.pickup_date) {
+      const date = part.match(/(\d{1,2}\/\d{1,2})/);
+      if (date) result.pickup_date = date[1];
+    }
+    if (!result.pickup_time) {
+      const t = normalizePickupTime(part);
+      if (t) result.pickup_time = t;
+    }
+    if (!result.last5) {
+      const alone = part.trim().match(/^([A-Za-z]\d{4})$/);
+      if (alone) result.last5 = alone[1];
+    }
+  }
+
+  // 舊版一行格式「電話 末五碼 日期」仍可讀，但不再強制只能五個數字
+  if (!result.last5) {
+    const oldCode = text.match(/0?9\d{8}\s+(\d{5})\s+\d{1,2}\//);
+    if (oldCode) result.last5 = oldCode[1];
+  }
+
+  result.info = parseRecipientInfo(text, result);
+  result.card = parseCard(text);
+  result.note = parseNotes(text);
+  result.delivery = guessDelivery(text);
+  return result;
+}
+/*__PARSER_END__*/
+
+// ── 收花資訊：只有黑貓、Lala、親自外送才強調，不擋儲存 ──
+function checkDeliveryMatch(prefix){
+  const p = prefix === 'e' ? 'e' : 'f';
+  const deliveryEl = document.getElementById(p + '-delivery');
+  const field = document.getElementById(p + '-info-field');
+  const hint = document.getElementById(p + '-info-hint');
+  const needs = deliveryNeedsInfo(deliveryEl ? deliveryEl.value : '');
+  if (field) field.classList.toggle('emphasize', needs);
+  if (hint) hint.classList.toggle('show', needs);
 }
 
 // ── 智慧貼上解析 ──
 function doParse(){
   const raw = document.getElementById('paste-box').value.trim();
   if(!raw){ showToast('請先貼上客人的訊息','error'); return; }
+  const parsed = parseOrderMessage(raw);
 
-  let name='',phone='',last5='',pickup_date='',pickup_time='',card='',item='',amount='',note='',info='';
-  let m;
-
-  // 品項：所有《》
-  const itemChunks=[];
-  const itemReg=/《\s*(.+?)\s*》([^《\n➤=►▶]*)/g;
-  let im;
-  while((im=itemReg.exec(raw))!==null){
-    const n=im[1].trim(),d=im[2].trim();
-    itemChunks.push(d?`《 ${n} 》 ${d}`:`《 ${n} 》`);
-  }
-  if(itemChunks.length>0) item=itemChunks.join(' ＋ ');
-
-  m=raw.match(/(?:訂購人姓名|姓名)[：:＊*]?\s*([^\s➤\n►▶]{2,8})/);
-  if(!m) m=raw.match(/^([^\s\d➤\n《=]{2,5})\s+09/m);
-  if(m) name=m[1].trim();
-
-  m=raw.match(/(?:聯絡電話|訂購人電話|電話)[：:＊*]?\s*(09\d{2}[-\s]?\d{3}[-\s]?\d{3})/);
-  if(!m){ const all=[...raw.matchAll(/(09\d{2}[-\s]?\d{6,})/g)]; if(all.length>0) phone=all[0][1].replace(/[-\s]/g,''); }
-  else phone=m[1].replace(/[-\s]/g,'');
-
-  m=raw.match(/(?:轉帳末五碼|末五碼|後五碼)[：:\s]*([^\n➤]+)/);
-  if(m){const seg=m[1].replace(/[（(][^）)]*[）)]/g,'').trim();const d=seg.match(/(\d{5})/);if(d)last5=d[1];}
-  if(!last5){m=raw.match(/09\d{8,}\s+(\d{5})\s+\d{1,2}\//);if(m)last5=m[1];}
-
-  m=raw.match(/(?:轉帳金額|金額)[：:＊*]?\s*(\d{3,5})/);
-  if(m) amount=m[1];
-
-  m=raw.match(/(?:取花日期|寄出日期|日期)[：:＊*]?\s*(\d{1,2}\/\d{1,2})/);
-  if(m) pickup_date=m[1];
-  else{ const all=raw.match(/\d{1,2}\/\d{1,2}/g); if(all) pickup_date=all[0]; }
-
-  m=raw.match(/(?:幾點來取花|幾點取花)[：:＊*]?\s*([^\n(（]{1,20})/);
-  if(m){const rt=m[1].trim().replace(/\s*[\(（].*$/,'').trim();const nt=rt.match(/(\d{1,2})[:.：](\d{2})/);pickup_time=nt?`${nt[1]}:${nt[2]}`:rt;}
-  else{m=raw.match(/(\d{1,2}):(\d{2})(?:\s|$)/);if(m)pickup_time=`${m[1]}:${m[2]}`;}
-
-  const infoChunks=[];
-  m=raw.match(/(?:黑貓送花地點|黑貓地址|送貨地址|地址)[：:\s]*([^\n➤=]{5,80})/);
-  if(m) infoChunks.push('地址：'+m[1].trim());
-  m=raw.match(/收花人[：:\s]*([^\n➤=\d]{2,15})/);
-  if(m){const v=m[1].trim();if(v&&!v.includes('電話'))infoChunks.push('收花人：'+v);}
-  m=raw.match(/收花人電話[：:\s]*(09\d{2}[-\s]?\d{3}[-\s]?\d{3})/);
-  if(m) infoChunks.push('收花人電話：'+m[1].replace(/[-\s]/g,''));
-  if(infoChunks.length===0){m=raw.match(/(?:取花地點|取貨地點)[：:\s]*([^\n➤=]{5,60})/);if(m)infoChunks.push(m[1].trim());}
-  info=infoChunks.join('｜');
-
-  m=raw.match(/(?:卡片內容|小卡)[：:\s]*\n?([\s\S]+?)(?:\n(?:➤|={3,})|$)/);
-  if(m) card=m[1].trim();
-
-  const nc=[];
-  m=raw.match(/許願色系[：:\s]+([^\n➤=]{2,100})/);
-  if(m) nc.push('許願色系：'+m[1].trim());
-  else{m=raw.match(/許願\s+([^\n➤=《》]{2,80})/);if(m)nc.push('許願：'+m[1].trim());}
-  m=raw.match(/(?:特殊需求|備註)[：:\s]+([^\n➤=]{2,100})/);
-  if(m) nc.push(m[1].trim());
-  note=nc.join('；');
-
-  const parsed={name,phone,last5,amount,pickup_date,pickup_time,item};
-
-  // 清空狀態
   WARN_FIELDS.forEach(f=>{
-    const el=document.getElementById(f.fid),hint=document.getElementById(f.hid);
-    if(el)el.classList.remove('filled','warn');
-    if(hint)hint.classList.remove('show');
+    const el=document.getElementById(f.fid), hint=document.getElementById(f.hid);
+    if(el) el.classList.remove('filled','warn');
+    if(hint) hint.classList.remove('show');
   });
-  ['f-info','f-card','f-note'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('filled');});
+  ['f-info','f-card','f-note'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.classList.remove('filled');
+  });
 
   let filled=0, missing=0;
   WARN_FIELDS.forEach(f=>{
-    const el=document.getElementById(f.fid),hint=document.getElementById(f.hid);
-    const val=parsed[f.key],hasVal=val&&String(val).trim()!=='';
-    if(hasVal)filled++;else missing++;
-    if(el){el.value=hasVal?val:'';el.classList.toggle('filled',hasVal);el.classList.toggle('warn',!hasVal);}
-    if(hint)hint.classList.toggle('show',!hasVal);
+    const el=document.getElementById(f.fid), hint=document.getElementById(f.hid);
+    const val=parsed[f.key], hasVal=val&&String(val).trim()!=='';
+    if(hasVal) filled++; else missing++;
+    if(el){
+      el.value = hasVal ? val : '';
+      el.classList.toggle('filled', !!hasVal);
+      el.classList.toggle('warn', !hasVal);
+    }
+    if(hint) hint.classList.toggle('show', !hasVal);
   });
 
-  [{id:'f-info',val:info},{id:'f-card',val:card},{id:'f-note',val:note}].forEach(({id,val})=>{
-    const el=document.getElementById(id);
-    if(el){el.value=val;el.classList.toggle('filled',val!=='');}
+  [{id:'f-info',val:parsed.info},{id:'f-card',val:parsed.card},{id:'f-note',val:parsed.note}].forEach(function(pair){
+    const el=document.getElementById(pair.id);
+    const val=pair.val || '';
+    if(el){ el.value=val; el.classList.toggle('filled', val!==''); }
     if(val!=='') filled++;
   });
 
-  const guessed=guessDelivery(raw);
-  if(guessed){
-    const sel=document.getElementById('f-delivery');
-    for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===guessed){sel.selectedIndex=i;break;}}
+  const sel=document.getElementById('f-delivery');
+  if(parsed.delivery){
+    for(let i=0;i<sel.options.length;i++){
+      if(sel.options[i].value===parsed.delivery){ sel.selectedIndex=i; break; }
+    }
+  } else {
+    sel.selectedIndex=0;
   }
   checkDeliveryMatch();
-  showToast(`解析完成：${filled} 個填入，${missing} 個請補充`,'success');
+  showToast('解析完成：'+filled+' 個填入，'+missing+' 個請補充','success');
 }
 
 // ── 新增訂單 ──
@@ -531,9 +855,8 @@ async function submitOrder(){
   const name=document.getElementById('f-name').value.trim();
   const pd=document.getElementById('f-pickup-date').value.trim();
   const item=document.getElementById('f-item').value.trim();
-  checkDeliveryMatch();
-  const deliveryWarn=document.getElementById('f-delivery').classList.contains('warn');
-  if(!name||!pd||!item||deliveryWarn){
+  // 收花資訊不再擋住儲存：全家店名、自取備註都可以留著
+  if(!name||!pd||!item){
     if(!name){document.getElementById('f-name').classList.add('warn');document.getElementById('h-name').classList.add('show');}
     if(!pd){document.getElementById('f-pickup-date').classList.add('warn');document.getElementById('h-pickup-date').classList.add('show');}
     if(!item){document.getElementById('f-item').classList.add('warn');document.getElementById('h-item').classList.add('show');}
@@ -559,7 +882,7 @@ async function submitOrder(){
       WARN_FIELDS.forEach(f=>{const h=document.getElementById(f.hid);if(h)h.classList.remove('show');});
       ['f-info','f-card','f-note'].forEach(id=>{const el=document.getElementById(id);if(el){el.value='';el.classList.remove('filled');}});
       document.getElementById('f-delivery').selectedIndex=0;
-      document.getElementById('h-delivery').classList.remove('show');
+      checkDeliveryMatch();
       document.getElementById('paste-box').value='';
       allOrders=[];
     } else showToast('新增失敗：'+json.message,'error');
@@ -574,7 +897,7 @@ async function loadOrders(force=false, retry=0){
   try{
     const json=await api('action=getOrders');
     if(json.success){
-      allOrders=json.orders;
+      allOrders=json.orders.map(o=>Object.assign({},o,{phone:restoreLeadingZero(o.phone)}));
       renderStats(); renderCalendar();
     } else { throw new Error(json.message); }
   }catch(e){
@@ -734,7 +1057,7 @@ function showDetail(ds, orders, stalls){
           ${o.pickup_time?`<span class="tag">${o.pickup_date} ${o.pickup_time}</span>`:`<span class="tag">${o.pickup_date}</span>`}
           ${o.delivery?`<span class="tag${o.delivery.includes('黑貓')||o.delivery.includes('Lala')?' green':''}">${o.delivery}</span>`:''}
           ${o.amount?`<span class="tag">$${parseFloat(o.amount).toLocaleString()}</span>`:''}
-          ${o.last5?`<span class="tag">末五碼 ${o.last5}</span>`:''}
+          ${o.last5?`<span class="tag">LINE Pay 交易代碼 ${o.last5}</span>`:''}
           ${o.pickup_info?`<span class="tag green" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.pickup_info}</span>`:''}
           ${o.card_text?`<span class="tag purple">💌 ${o.card_text.slice(0,20)}</span>`:''}
         </div>
@@ -769,6 +1092,7 @@ function openEditModal(rowNum){
   const sel=document.getElementById('e-delivery');
   for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===o.delivery){sel.selectedIndex=i;break;}}
   document.getElementById('edit-modal').classList.add('open');
+  checkDeliveryMatch('e');
 }
 
 function closeEditModal(){
