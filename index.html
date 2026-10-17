@@ -87,7 +87,9 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
 .toast.error{background:var(--red)}
 
 /* Calendar */
-.refresh-badge{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--sage-dark);background:var(--grn-l);border-radius:20px;padding:4px 12px;margin-bottom:1.25rem;width:fit-content}
+.refresh-row{display:flex;align-items:center;gap:10px;margin-bottom:1.25rem;flex-wrap:wrap}
+.refresh-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;line-height:1.4;color:var(--sage-dark);background:var(--grn-l);border-radius:20px;padding:4px 12px;margin:0;width:fit-content}
+.refresh-btn{display:inline-flex;align-items:center;font-size:12px;line-height:1.4;color:var(--blue-dk);background:var(--blue-l);border:none;border-radius:20px;padding:4px 14px;margin:0;cursor:pointer;font-family:'Noto Sans TC',sans-serif;font-weight:500}
 .dot-pulse{width:7px;height:7px;border-radius:50%;background:var(--grn);animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .cal-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:1.5rem}
@@ -286,9 +288,9 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
 <div class="page" id="page-calendar">
   <p class="section-title">訂單月曆</p>
   <p class="section-sub">點擊日期格查看明細；點「編輯」可修改訂單內容</p>
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:1.25rem;flex-wrap:wrap">
+  <div class="refresh-row">
     <div class="refresh-badge"><span class="dot-pulse"></span>自動每 3 分鐘同步一次</div>
-    <button onclick="manualRefresh()" id="refresh-btn" style="font-size:12px;color:var(--blue-dk);background:var(--blue-l);border:none;border-radius:20px;padding:4px 14px;cursor:pointer;font-family:'Noto Sans TC',sans-serif;font-weight:500">↻ 手動刷新</button>
+    <button onclick="manualRefresh()" id="refresh-btn" class="refresh-btn">↻ 手動刷新</button>
   </div>  <div class="cal-stats" id="cal-stats">
     <div class="stat-card"><div class="stat-label">載入中</div><div class="stat-val">—</div></div>
     <div class="stat-card"><div class="stat-label">載入中</div><div class="stat-val">—</div></div>
@@ -345,7 +347,9 @@ const DEMO_ORDERS = [
 ];
 
 let allOrders = [];
-let curYear = 2026, curMonth = 4; // 預設顯示5月
+// 月曆一打開就停在今天的月份（0 是一月）；左右箭頭仍用 changeMonth 換月
+const _openAt = new Date();
+let curYear = _openAt.getFullYear(), curMonth = _openAt.getMonth();
 const todayStr = new Date().toISOString().slice(0,10);
 let editingRow = null;
 let refreshTimer = null;
