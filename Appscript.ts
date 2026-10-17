@@ -2,14 +2,20 @@
 // 花店訂單管理系統 - Apps Script 完整版 v2
 // 欄位：A姓名/B電話/C金額/D取花日期/E幾點取花/F配送/G品項/H LINE Pay 交易代碼/I收到款/J收花資訊/K卡片內容/L備註
 // H 欄在前端 JSON 仍叫 last5。電話與交易代碼要以文字寫入，避免開頭的 0 被吃掉。
-// M 欄「訂單編號」是日曆同步自己寫的，請不要改、也不要拿來填備註。刪掉一列時列號會往上移，所以不能用列號認訂單。
+// L 欄備註用純文字寫入，換行要留著。不要把備註寫進 M 或 N。
+// M 欄「訂單編號」是日曆同步自己寫的。刪掉一列時列號會往上移，所以不能用列號認訂單。
+// N 欄「請求編號」是瀏覽器這一次送出產生的。同一編號再進來，只回應成功，不再新增一列。
+// 新增、修改、刪除只先寫試算表就回應。日曆整份對帳改排程，避免一次請求卡太久又被重送。
 // 這份檔案要貼回 Apps Script，並建立新的部署版本，才會在線上生效。
 // 貼上並部署後，請在編輯器手動執行一次 syncToCalendar，把已經殘留的舊日曆事件清乾淨。
+// 也請手動執行一次 authorizeTriggers，同意排程權限。之後每次改訂單才會自動排日曆同步。
 // ============================================================
 
 const SHEET_NAME = "訂單清單";
 const CAL_NAME   = "🌸 花店訂單";
 const ORDER_ID_COL = 13; // M 欄
+const REQUEST_ID_COL = 14; // N 欄
+const NOTE_COL = 12; // L 欄
 
 function getConfig_() {
   const props = PropertiesService.getScriptProperties();
@@ -48,7 +54,8 @@ function handleRequest(e) {
   const output = ContentService.createTextOutput();
   output.setMimeType(ContentService.MimeType.JSON);
   try {
-    const params = e.parameter || {};
+    // 讀取仍走網址參數。寫入改走 POST 本文，備註的換行才不會在網址裡被截掉。
+    const params = readParams_(e);
     const config = getConfig_();
     const action = params.action;
 
@@ -67,9 +74,9 @@ function handleRequest(e) {
     }
     let result;
     if      (action === "getOrders")   result = getOrders();
-    else if (action === "addOrder")    result = addOrder(JSON.parse(params.data || "{}"));
-    else if (action === "updateOrder") result = updateOrder(Number(params.row), JSON.parse(params.data || "{}"));
-    else if (action === "deleteOrder") result = deleteOrder(Number(params.row));
+    else if (action === "addOrder")    result = addOrder(JSON.parse(params.data || "{}"), params.requestId);
+    else if (action === "updateOrder") result = updateOrder(Number(params.row), JSON.parse(params.data || "{}"), params.requestId);
+    else if (action === "deleteOrder") result = deleteOrder(Number(params.row), params.requestId, params.name);
     else if (action === "markPaid")    result = markPaid(Number(params.row), params.value);
     else result = { success: false, message: "未知的 action" };
     output.setContent(JSON.stringify(result));
@@ -82,7 +89,11 @@ function handleRequest(e) {
 function getOrders() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
   ensureNoteHeader_(sheet);
-  const data  = sheet.getDataRange().getValues();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { success: true, orders: [] };
+  // 固定讀到 L 欄。getDataRange 有時不會把剛加上、或只有備註的那一欄算進去。
+  const width = Math.max(NOTE_COL, sheet.getLastColumn());
+  const data = sheet.getRange(1, 1, lastRow, width).getValues();
   const orders = [];
   for (let i = 1; i < data.length; i++) {
     const row  = data[i];
@@ -91,22 +102,11 @@ function getOrders() {
     if (!name && !date) continue;
     if (name.includes("成本") || name.includes("完成線")) continue;
     if (String(row[2]).trim().startsWith("-")) continue;
-    orders.push({
-      row:         i + 1,
-      name:        name,
-      phone:       restorePhone_(row[1]),
-      amount:      row[2] || "",
-      pickup_date: date,
-      pickup_time: formatTimeCell(row[4]),
-      delivery:    String(row[5] || ""),
-      item:        String(row[6] || ""),
-      last5:       String(row[7] || ""),
-      paid:        row[8] === true || String(row[8]).toLowerCase() === "true" || row[8] === "✓",
-      pickup_info: String(row[9] || ""),
-      card_text:   String(row[10] || ""),
-      // 舊訂單沒有 L 欄時就是空字串，不影響原本的列
-      note:        String(row[11] || ""),
-    });
+    const item = orderFromCells_(row, i + 1);
+    item.phone = restorePhone_(row[1]);
+    item.pickup_date = date;
+    item.pickup_time = formatTimeCell(row[4]);
+    orders.push(item);
   }
   return { success: true, orders };
 }
@@ -134,9 +134,33 @@ function formatTimeCell(val) {
   return String(val).trim();
 }
 
-function addOrder(data) {
-  const sheet   = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-  const allData = sheet.getDataRange().getValues();
+function addOrder(data, requestId) {
+  const id = cleanRequestId_(requestId || (data && data.requestId));
+  const lock = LockService.getScriptLock();
+  // 同一筆送出若被重送，要排好隊，不能兩個人同時插列
+  if (!lock.tryLock(20000)) return { success: false, message: "系統忙碌，請再試一次" };
+  let result;
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+    ensureRequestIdHeader_(sheet);
+    if (id) {
+      const remembered = rememberedRow_(sheet, id);
+      if (remembered) {
+        result = { success: true, duplicate: true, row: remembered, message: "這筆訂單已經新增過" };
+      }
+    }
+    if (!result) result = insertOrder_(sheet, data || {}, id);
+  } finally {
+    lock.releaseLock();
+  }
+  if (result && result.success && !result.duplicate) scheduleCalendarSync_();
+  return result;
+}
+
+function insertOrder_(sheet, data, requestId) {
+  const lastRow = Math.max(sheet.getLastRow(), 1);
+  const width = Math.max(4, sheet.getLastColumn());
+  const allData = sheet.getRange(1, 1, lastRow, width).getValues();
   const newDate = parseDate(data.pickup_date || "");
 
   let insertRow = allData.length + 1;
@@ -145,50 +169,102 @@ function addOrder(data) {
     if (newDate && existingDate && newDate < existingDate) { insertRow = i + 1; break; }
   }
 
-  sheet.insertRowBefore(insertRow);
-  // 插入列時如果帶進別列的訂單編號，清掉，避免兩張單共用同一個日曆事件
+  if (insertRow <= sheet.getLastRow()) sheet.insertRowBefore(insertRow);
+  // 插入列時如果帶進別列的編號，清掉，避免兩張單共用同一個日曆事件或請求編號
   sheet.getRange(insertRow, ORDER_ID_COL).clearContent();
-  writeOrderRow_(sheet, insertRow, [
-    data.name        || "",
-    data.phone       || "",
-    data.amount      || "",
-    data.pickup_date || "",
-    data.pickup_time || "",
-    data.delivery    || "",
-    data.item        || "",
-    data.last5       || "",
-    false,
-    data.pickup_info || "",
-    data.card_text   || "",
-    data.note        || "",
-  ]);
-  // 列已經寫進試算表後再對日曆，這樣新訂單才會被讀到
+  sheet.getRange(insertRow, REQUEST_ID_COL).clearContent();
+  writeOrderRow_(sheet, insertRow, orderToCells_(data, false));
+  if (requestId) rememberRequestId_(sheet, insertRow, requestId);
   SpreadsheetApp.flush();
-  syncCalendarQuiet_();
   return { success: true, message: "訂單已新增於第 " + insertRow + " 行", row: insertRow };
 }
 
-function updateOrder(rowNumber, data) {
+function updateOrder(rowNumber, data, requestId) {
   if (!rowNumber || rowNumber < 2) return { success: false, message: "無效的行號" };
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-  writeOrderRow_(sheet, rowNumber, [
-    data.name        || "",
-    data.phone       || "",
-    data.amount      || "",
-    data.pickup_date || "",
-    data.pickup_time || "",
-    data.delivery    || "",
-    data.item        || "",
-    data.last5       || "",
-    sheet.getRange(rowNumber, 9).getValue(),
-    data.pickup_info || "",
-    data.card_text   || "",
-    data.note        || "",
-  ]);
-  SpreadsheetApp.flush();
-  syncCalendarQuiet_();
-  return { success: true };
+  const id = cleanRequestId_(requestId || (data && data.requestId));
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { success: false, message: "系統忙碌，請再試一次" };
+  let result;
+  try {
+    if (id && CacheService.getScriptCache().get("req:" + id)) {
+      result = { success: true, duplicate: true };
+    } else {
+      const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+      writeOrderRow_(sheet, rowNumber, orderToCells_(data || {}, sheet.getRange(rowNumber, 9).getValue()));
+      if (id) CacheService.getScriptCache().put("req:" + id, "u" + rowNumber, 21600);
+      SpreadsheetApp.flush();
+      result = { success: true };
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  if (result && result.success && !result.duplicate) scheduleCalendarSync_();
+  return result;
 }
+
+/*__ORDER_IO_START__*/
+function normalizeNote_(val) {
+  return String(val == null ? "" : val).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+}
+
+function cleanRequestId_(raw) {
+  const s = String(raw == null ? "" : raw).trim();
+  if (/^r[a-z0-9]{6,40}$/.test(s)) return s;
+  return "";
+}
+
+// ids[0] 是第 2 列。找到同一個請求編號就回傳列號，沒有就是 0。
+function findRequestRow_(ids, requestId) {
+  const id = cleanRequestId_(requestId);
+  if (!id || !ids) return 0;
+  for (let i = 0; i < ids.length; i++) {
+    if (ids[i] === id) return i + 2;
+  }
+  return 0;
+}
+
+function decideDuplicate_(knownIds, requestId) {
+  const row = findRequestRow_(knownIds, requestId);
+  return { id: cleanRequestId_(requestId), duplicate: row > 0, row: row };
+}
+
+function orderToCells_(data, paid) {
+  const src = data || {};
+  return [
+    src.name || "",
+    src.phone || "",
+    src.amount || "",
+    src.pickup_date || "",
+    src.pickup_time || "",
+    src.delivery || "",
+    src.item || "",
+    src.last5 || "",
+    paid,
+    src.pickup_info || "",
+    src.card_text || "",
+    normalizeNote_(src.note),
+  ];
+}
+
+function orderFromCells_(row, rowNumber) {
+  const cells = row || [];
+  return {
+    row: rowNumber,
+    name: String(cells[0] || "").trim(),
+    phone: cells[1],
+    amount: cells[2] || "",
+    pickup_date: cells[3],
+    pickup_time: cells[4],
+    delivery: String(cells[5] || ""),
+    item: String(cells[6] || ""),
+    last5: String(cells[7] || ""),
+    paid: cells[8] === true || String(cells[8]).toLowerCase() === "true" || cells[8] === "✓",
+    pickup_info: String(cells[9] || ""),
+    card_text: String(cells[10] || ""),
+    note: normalizeNote_(cells[11]),
+  };
+}
+/*__ORDER_IO_END__*/
 
 // L1 是空白才寫上「備註」。已經有標題就不覆蓋。
 function ensureNoteHeader_(sheet) {
@@ -200,18 +276,24 @@ function ensureNoteHeader_(sheet) {
 function writeOrderRow_(sheet, rowNumber, values) {
   const phone = restorePhone_(values[1]);
   const code  = String(values[7] == null ? "" : values[7]).trim();
+  const note  = normalizeNote_(values[11]);
   const phoneCell = sheet.getRange(rowNumber, 2);
   const codeCell  = sheet.getRange(rowNumber, 8);
+  const noteCell  = sheet.getRange(rowNumber, NOTE_COL);
   phoneCell.setNumberFormat("@");
   codeCell.setNumberFormat("@");
+  // 先設成純文字，備註裡的換行、； 才不會被試算表改掉
+  noteCell.setNumberFormat("@");
   const row = values.slice();
   row[1] = phone;
   row[7] = code;
+  row[11] = note;
   ensureNoteHeader_(sheet);
   sheet.getRange(rowNumber, 1, 1, 12).setValues([row]);
-  // setValues 仍可能把長得像數字的字串轉成數字，文字格式設好後再寫一次這兩格
+  // setValues 仍可能把長得像數字的字串轉成數字，文字格式設好後再寫一次
   phoneCell.setValue(phone);
   codeCell.setValue(code);
+  noteCell.setValue(note);
 }
 
 // 舊資料若已變成 9 開頭的 9 位數，讀出來時補回開頭的 0。
@@ -233,12 +315,34 @@ function restorePhone_(val) {
   return s;
 }
 
-function deleteOrder(rowNumber) {
+function deleteOrder(rowNumber, requestId, expectName) {
   if (!rowNumber || rowNumber < 2) return { success: false, message: "無效的行號" };
-  SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME).deleteRow(rowNumber);
-  SpreadsheetApp.flush();
-  syncCalendarQuiet_();
-  return { success: true };
+  const id = cleanRequestId_(requestId);
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return { success: false, message: "系統忙碌，請再試一次" };
+  let result;
+  try {
+    if (id && CacheService.getScriptCache().get("req:" + id)) {
+      result = { success: true, duplicate: true };
+    } else {
+      const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+      const name = String(sheet.getRange(rowNumber, 1).getValue() || "").trim();
+      const wanted = String(expectName == null ? "" : expectName).trim();
+      // 列號會往上移。對不到原本的姓名就不要刪，避免刪到下一筆。
+      if (wanted && name !== wanted) {
+        result = { success: false, message: "這一行已經不是原本那筆訂單，請重新整理後再刪" };
+      } else {
+        sheet.deleteRow(rowNumber);
+        if (id) CacheService.getScriptCache().put("req:" + id, "d" + rowNumber, 21600);
+        SpreadsheetApp.flush();
+        result = { success: true };
+      }
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  if (result && result.success && !result.duplicate) scheduleCalendarSync_();
+  return result;
 }
 
 function markPaid(rowNumber, value) {
@@ -248,13 +352,85 @@ function markPaid(rowNumber, value) {
   return { success: true };
 }
 
-// 日曆同步失敗時，訂單還是要算儲存成功，下次再對一次就好
-function syncCalendarQuiet_() {
+// 不在這次回應裡跑完整日曆對帳。對帳會掃很多行程，請求會變慢，慢的 GET 又容易被重送。
+function scheduleCalendarSync_() {
   try {
-    syncToCalendar();
+    const handler = "runScheduledCalendarSync";
+    const triggers = ScriptApp.getProjectTriggers();
+    for (let i = 0; i < triggers.length; i++) {
+      if (triggers[i].getHandlerFunction() === handler) return;
+    }
+    ScriptApp.newTrigger(handler).timeBased().after(60 * 1000).create();
   } catch (err) {
-    Logger.log('日曆同步失敗（訂單資料已儲存）：' + (err && err.message ? err.message : err));
+    Logger.log("排程日曆同步失敗（訂單資料已儲存）：" + (err && err.message ? err.message : err));
   }
+}
+
+function runScheduledCalendarSync() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "runScheduledCalendarSync") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  syncToCalendar();
+}
+
+// 部署後在編輯器執行一次，讓 Google 跳出排程授權。
+function authorizeTriggers() {
+  scheduleCalendarSync_();
+  Logger.log("已排定日曆同步");
+}
+
+function readParams_(e) {
+  const params = {};
+  const query = (e && e.parameter) || {};
+  const qKeys = Object.keys(query);
+  for (let i = 0; i < qKeys.length; i++) params[qKeys[i]] = query[qKeys[i]];
+  const raw = e && e.postData && e.postData.contents;
+  if (!raw || raw.charAt(0) !== "{") return params;
+  const body = JSON.parse(raw);
+  const keys = Object.keys(body);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const value = body[key];
+    if (value == null) continue;
+    // data 在本文裡是物件，後面仍用 JSON.parse 讀，跟舊的網址參數同一條路
+    if (key === "data" && typeof value === "object") params.data = JSON.stringify(value);
+    else params[key] = String(value);
+  }
+  return params;
+}
+
+function rememberedRow_(sheet, requestId) {
+  const cached = CacheService.getScriptCache().get("req:" + requestId);
+  const cachedRow = Number(cached);
+  if (cachedRow >= 2) return cachedRow;
+  const row = findRequestRow_(listRequestIds_(sheet), requestId);
+  if (row) CacheService.getScriptCache().put("req:" + requestId, String(row), 21600);
+  return row;
+}
+
+function rememberRequestId_(sheet, rowNumber, requestId) {
+  ensureRequestIdHeader_(sheet);
+  const cell = sheet.getRange(rowNumber, REQUEST_ID_COL);
+  cell.setNumberFormat("@");
+  cell.setValue(requestId);
+  CacheService.getScriptCache().put("req:" + requestId, String(rowNumber), 21600);
+}
+
+function listRequestIds_(sheet) {
+  const last = sheet.getLastRow();
+  if (last < 2) return [];
+  const values = sheet.getRange(2, REQUEST_ID_COL, last - 1, 1).getValues();
+  const ids = [];
+  for (let i = 0; i < values.length; i++) ids.push(String(values[i][0] || ""));
+  return ids;
+}
+
+function ensureRequestIdHeader_(sheet) {
+  const cell = sheet.getRange(1, REQUEST_ID_COL);
+  if (!String(cell.getValue() || "").trim()) cell.setValue("請求編號");
 }
 
 function makeOrderId_() {
