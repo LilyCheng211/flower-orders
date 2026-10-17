@@ -350,7 +350,8 @@ let allOrders = [];
 // 月曆一打開就停在今天的月份（0 是一月）；左右箭頭仍用 changeMonth 換月
 const _openAt = new Date();
 let curYear = _openAt.getFullYear(), curMonth = _openAt.getMonth();
-const todayStr = new Date().toISOString().slice(0,10);
+// 今天用本地日期。toISOString 是 UTC，台灣凌晨會少一天。
+const todayStr = `${_openAt.getFullYear()}-${String(_openAt.getMonth()+1).padStart(2,'0')}-${String(_openAt.getDate()).padStart(2,'0')}`;
 let editingRow = null;
 let refreshTimer = null;
 
@@ -612,34 +613,31 @@ function startAutoRefresh(){
 
 // ── 統計 ──
 function renderStats(){
-  const today = new Date(todayStr);
-  const thisMonth = today.getMonth();
-  const thisYear  = today.getFullYear();
+  // 用電腦上的今天決定「當月」，不要用 UTC，避免台灣凌晨被算成前一天
+  const now = new Date();
+  const thisMonth = now.getMonth();
+  const thisYear  = now.getFullYear();
+  const monthKey = `${thisYear}-${String(thisMonth+1).padStart(2,'0')}`;
   const monthNames=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
   const mLabel = monthNames[thisMonth];
 
-  // 1. 本月訂單量
+  // 1. 本月訂單量（取花日期落在當月；已收款、未收款都算）
   const monthOrders = allOrders.filter(o=>{
-    const d=dateToStr(o.pickup_date); if(!d)return false;
-    const dt=new Date(d);
-    return dt.getFullYear()===thisYear && dt.getMonth()===thisMonth;
+    const d=dateToStr(o.pickup_date);
+    return d && d.slice(0,7)===monthKey;
   });
 
   // 2. 本月總營收
-  const monthRevenue = monthOrders.reduce((s,o)=>s+(parseFloat(o.amount)||0),0);
+  const monthRevenue = monthOrders.reduce((s,o)=>s+parseAmount(o.amount),0);
 
-  // 3. 需預留成本金：今天起到最後一張，跨月份全算，× 0.3
-  const futureOrders = allOrders.filter(o=>{
-    const d=dateToStr(o.pickup_date); return d&&d>=todayStr;
-  });
-  const futureTotalAmt = futureOrders.reduce((s,o)=>s+(parseFloat(o.amount)||0),0);
-  const costReserve = Math.round(futureTotalAmt * 0.3);
+  // 3. 需預留成本金：當月所有訂單金額 × 30%（不是「今天之後、跨月加總」）
+  const costReserve = Math.round(monthRevenue * 0.3);
 
-  // 4. 2026 年總營收（含沒有日期的訂單）
+  // 4. 今年總營收（含沒有日期的訂單）
   const yearRevenue = allOrders.reduce((s,o)=>{
     const d=dateToStr(o.pickup_date);
-    if(d && new Date(d).getFullYear()!==thisYear) return s;
-    return s+(parseFloat(o.amount)||0);
+    if(d && d.slice(0,4)!==String(thisYear)) return s;
+    return s+parseAmount(o.amount);
   },0);
 
   document.getElementById('cal-stats').innerHTML=`
@@ -654,7 +652,7 @@ function renderStats(){
     <div class="stat-card">
       <div class="stat-label">需預留成本金</div>
       <div class="stat-val" style="font-size:16px;margin-top:5px">$${costReserve.toLocaleString()}</div>
-      <div style="font-size:10px;color:var(--faint);margin-top:3px">${futureOrders.length} 張合計 × 30%</div>
+      <div style="font-size:10px;color:var(--faint);margin-top:3px">${mLabel} ${monthOrders.length} 張合計 × 30%</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">${thisYear} 年總營收</div>
@@ -838,11 +836,25 @@ async function deleteOrder(rowNum, name){
 // ── 工具 ──
 function shortItem(item){ return item.replace(/《\s*/g,'').replace(/\s*》/g,'').trim().slice(0,12); }
 
+// 金額格子可能是 1390、"1,390"、"$1390"。抓出數字；沒有就當 0。
+function parseAmount(v){
+  if(typeof v==='number') return Number.isFinite(v)?v:0;
+  const m=String(v==null?'':v).replace(/[,，\s$＄]/g,'').match(/-?\d+(?:\.\d+)?/);
+  return m?parseFloat(m[0]):0;
+}
+
+// 取花日期轉成 YYYY-MM-DD。只寫「月/日」時用今年；有寫西元年就照該年。
 function dateToStr(pickup_date){
   if(!pickup_date) return null;
-  const m=String(pickup_date).match(/(\d{1,2})[\/\-](\d{1,2})/);
+  const s=String(pickup_date).trim();
+  const pad=n=>String(n).padStart(2,'0');
+  let m=s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if(m) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+  m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m) return `${m[3]}-${pad(m[1])}-${pad(m[2])}`;
+  m=s.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
   if(!m) return null;
-  return `2026-${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`;
+  return `${new Date().getFullYear()}-${pad(m[1])}-${pad(m[2])}`;
 }
 
 function parseTime(t){

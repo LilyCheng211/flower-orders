@@ -103,13 +103,14 @@ function getOrders() {
   return { success: true, orders };
 }
 
-// ── Date 物件轉 M/D 格式 ──
+// ── Date 物件轉 年/月/日。只丟月/日的話，前端會把每一年都當成今年。──
 function formatDateCell(val) {
   if (!val) return "";
   if (val instanceof Date) {
+    const y = val.getFullYear();
     const m = val.getMonth() + 1;
     const d = val.getDate();
-    return `${m}/${d}`;
+    return `${y}/${m}/${d}`;
   }
   return String(val).trim();
 }
@@ -273,10 +274,16 @@ function resolveTime(timeStr) {
   return null;
 }
 
+// 有西元年就用該年；只寫月/日才用今年。不要再寫死 2026，否則「2026/10/17」會被看成 26 月。
 function parseDate(dateStr) {
   if (!dateStr) return null;
-  const m = String(dateStr).trim().match(/(\d{1,2})[\/\-](\d{1,2})/);
-  if (m) return new Date(2026, parseInt(m[1]) - 1, parseInt(m[2]));
+  const s = String(dateStr).trim();
+  let m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (m) return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) return new Date(parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10));
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+  if (m) return new Date(new Date().getFullYear(), parseInt(m[1], 10) - 1, parseInt(m[2], 10));
   return null;
 }
 
