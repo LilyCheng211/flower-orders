@@ -171,8 +171,22 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
 .detail-line{display:grid;grid-template-columns:11em 1fr;gap:8px;font-size:14px;line-height:1.55}
 .detail-line .k{color:var(--muted)}
 .detail-line .v{white-space:pre-wrap;word-break:break-word}
+.field label.ref-add{position:relative;display:inline-flex;align-items:center;justify-content:center;width:auto;margin-bottom:0;padding:8px 14px;border:1px dashed var(--bdr);border-radius:8px;background:var(--cream);color:var(--ink);font-size:13px;font-weight:400;letter-spacing:0;text-transform:none;cursor:pointer}
+.ref-add input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.ref-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.ref-chip{width:84px}
+.ref-chip img,.ref-zoom img{width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--bdr);display:block;background:#fff}
+.ref-zoom{padding:0;border:none;background:transparent;cursor:pointer}
+.ref-zoom img{width:96px;height:96px}
+.ref-remove{margin-top:4px;width:100%;border:none;background:var(--cream);color:var(--muted);border-radius:6px;font-size:11px;padding:3px 0;cursor:pointer;font-family:'Noto Sans TC',sans-serif}
+.ref-hint{font-size:11px;color:var(--faint);margin-top:6px}
+.detail-images{margin-top:4px}
+.detail-images .k{color:var(--muted);font-size:14px}
 #order-modal{z-index:180}
 #confirm-modal{z-index:260}
+#image-modal{z-index:320;background:rgba(0,0,0,.78)}
+#image-zoom{max-width:min(92vw,1000px);max-height:86vh;border-radius:10px;background:#fff}
+.image-zoom-close{position:absolute;top:12px;right:12px;color:#fff;font-size:28px}
 .cancel-btn{padding:11px 20px;background:none;border:1px solid var(--bdr);border-radius:8px;font-size:14px;color:var(--muted);font-family:'Noto Sans TC',sans-serif;cursor:pointer}
 .cancel-btn:hover{background:var(--cream)}
 
@@ -234,6 +248,14 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
     <div class="fgrid">
       <div class="field full"><label>卡片內容</label><textarea id="e-card" placeholder="卡片文字..."></textarea></div>
       <div class="field full"><label>備註</label><textarea id="e-note" placeholder="許願色系、特殊需求..."></textarea></div>
+      <div class="field full">
+        <label>參考圖片<span class="opt">選填，可多張</span></label>
+        <label class="ref-add">＋ 加入參考圖片
+          <input id="e-images" type="file" accept="image/*" multiple onchange="onPickImages('e', this)">
+        </label>
+        <div class="ref-row" id="e-image-row"></div>
+        <div class="ref-hint">手機照片會先縮小再上傳。最多 6 張，可以移除。</div>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="cancel-btn" type="button" onclick="closeEditModal()">取消</button>
@@ -252,6 +274,11 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
     <div class="detail-list" id="order-detail-body"></div>
     <div class="modal-actions" id="order-detail-actions"></div>
   </div>
+</div>
+
+<div class="modal-overlay" id="image-modal" onclick="if(event.target===this)closeImageZoom()">
+  <button class="modal-close image-zoom-close" type="button" onclick="closeImageZoom()">×</button>
+  <img id="image-zoom" alt="參考圖片放大" referrerpolicy="no-referrer">
 </div>
 
 <div class="modal-overlay" id="confirm-modal">
@@ -315,6 +342,14 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
     <div class="fgrid">
       <div class="field full"><label>卡片內容<span class="opt">選填，不填也沒關係</span></label><textarea id="f-card" placeholder="寫在卡片上的話..."></textarea></div>
       <div class="field full"><label>備註<span class="opt">選填，不填也沒關係</span></label><textarea id="f-note" placeholder="許願色系、特殊需求、其他補充..."></textarea></div>
+      <div class="field full">
+        <label>參考圖片<span class="opt">選填，可多張</span></label>
+        <label class="ref-add">＋ 加入參考圖片
+          <input id="f-images" type="file" accept="image/*" multiple onchange="onPickImages('f', this)">
+        </label>
+        <div class="ref-row" id="f-image-row"></div>
+        <div class="ref-hint">手機照片會先縮小再上傳。最多 6 張，可以移除。</div>
+      </div>
     </div>
     <button class="sub-btn" id="submit-btn" type="button" onclick="submitOrder()">新增訂單 →</button>
   </div>
@@ -402,6 +437,8 @@ let confirmResolve = null;
 let addSubmit = { id: '', fingerprint: '' };
 let editSubmit = { id: '', fingerprint: '' };
 let deleteSubmit = { id: '', fingerprint: '' };
+let draftImages = { f: [], e: [] };
+let imageBusy = 0;
 const demoSeen = {};
 const DEMO_MODE = /(?:\?|&)demo=1(?:&|$)/.test(location.search);
 
@@ -969,8 +1006,156 @@ function submissionFingerprint(data){
     last5: src.last5 || '',
     pickup_info: src.pickup_info || '',
     card_text: src.card_text || '',
-    note: src.note || ''
+    note: src.note || '',
+    images: imageFingerprint(src.images)
   });
+}
+
+function maxOrderImages(){ return 6; }
+function maxImageEdge(){ return 1600; }
+function maxImageBytes(){ return 450 * 1024; }
+
+function fitImageSize(width, height, maxEdge){
+  const edge = maxEdge || maxImageEdge();
+  const w = Math.max(0, Math.round(Number(width) || 0));
+  const h = Math.max(0, Math.round(Number(height) || 0));
+  if (!w || !h) return { width: 0, height: 0 };
+  const scale = Math.min(1, edge / Math.max(w, h));
+  return {
+    width: Math.max(1, Math.round(w * scale)),
+    height: Math.max(1, Math.round(h * scale))
+  };
+}
+
+function approxBase64Bytes(data){
+  const s = String(data || '');
+  const comma = s.indexOf(',');
+  const clean = (comma >= 0 ? s.slice(comma + 1) : s).replace(/\s/g, '');
+  if (!clean) return 0;
+  let pad = 0;
+  if (clean.charAt(clean.length - 1) === '=') pad++;
+  if (clean.length > 1 && clean.charAt(clean.length - 2) === '=') pad++;
+  return Math.floor(clean.length * 3 / 4) - pad;
+}
+
+function pickJpegQuality(samples, budget){
+  const limit = budget || maxImageBytes();
+  const list = samples || [];
+  let fallback = 0.4;
+  for (let i = 0; i < list.length; i++) {
+    fallback = list[i].quality;
+    if (list[i].bytes <= limit) return list[i].quality;
+  }
+  return fallback;
+}
+
+function imageFileId(link){
+  const s = String(link || '');
+  let found = s.match(/\/file\/d\/([a-zA-Z0-9_-]{10,})/);
+  if (found) return found[1];
+  found = s.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+  if (found) return found[1];
+  found = s.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
+  if (found) return found[1];
+  return '';
+}
+
+// 單檔已開放「知道連結的人可看」時，這個網址才能放進 img。
+function imageDisplayUrl(link){
+  const s = String(link || '');
+  if (/^data:image\//i.test(s)) return s;
+  const id = imageFileId(s);
+  return id ? ('https://lh3.googleusercontent.com/d/' + id) : '';
+}
+
+function imageFallbackUrl(link){
+  const id = imageFileId(link);
+  return id ? ('https://drive.google.com/thumbnail?id=' + id + '&sz=w1600') : '';
+}
+
+function isShowableImage(s){
+  return /^https:\/\//i.test(s) || /^data:image\//i.test(s);
+}
+
+function parseImageField(raw){
+  const out = [];
+  const push = function(value){
+    const s = String(value || '').trim();
+    if (isShowableImage(s)) out.push(s);
+  };
+  if (Array.isArray(raw)) {
+    raw.forEach(function(item){
+      if (item && typeof item === 'object') push(item.url || item.link || '');
+      else push(item);
+    });
+    return out;
+  }
+  String(raw == null ? '' : raw).split(/\s+/).forEach(push);
+  return out;
+}
+
+function orderImageLinks(order){
+  const o = order || {};
+  if (o.images == null || o.images === '') return [];
+  return parseImageField(o.images);
+}
+
+function addImageDraft(list, image, limit){
+  const next = (list || []).slice();
+  const max = limit || maxOrderImages();
+  if (next.length >= max) return { ok: false, list: next, message: '最多 ' + max + ' 張參考圖片' };
+  next.push(image);
+  return { ok: true, list: next, message: '' };
+}
+
+function removeImageDraft(list, index){
+  return (list || []).filter(function(_, i){ return i !== index; });
+}
+
+function imagesToPayload(list){
+  const out = [];
+  (list || []).forEach(function(img){
+    if (!img) return;
+    if (typeof img === 'string') {
+      if (img) out.push({ url: img });
+      return;
+    }
+    if (img.data) {
+      out.push({ name: img.name || 'photo.jpg', mime: 'image/jpeg', data: img.data });
+      return;
+    }
+    const url = img.link || img.url || '';
+    if (url) out.push({ url: url });
+  });
+  return out;
+}
+
+function imageFingerprint(list){
+  return imagesToPayload(list).map(function(img){
+    if (img.url) return 'u:' + img.url;
+    return 'd:' + String(img.data || '');
+  }).join('|');
+}
+
+function imageUploadTooBig(list){
+  const payload = imagesToPayload(list);
+  let total = 0;
+  for (let i = 0; i < payload.length; i++) {
+    if (!payload[i].data) continue;
+    const n = approxBase64Bytes(payload[i].data);
+    if (n > maxImageBytes()) return true;
+    total += n;
+  }
+  return total > maxImageBytes() * maxOrderImages();
+}
+
+function demoImageLinks(images){
+  const out = [];
+  imagesToPayload(images).forEach(function(img){
+    if (img.url) out.push(img.url);
+    else if (img.data) out.push('data:' + (img.mime || 'image/jpeg') + ';base64,' + img.data);
+  });
+  return out;
 }
 
 function encodeWriteBody(obj){
@@ -1087,13 +1272,18 @@ function demoWrite(body){
       pickup_date: data.pickup_date || '', pickup_time: data.pickup_time || '',
       delivery: data.delivery || '', item: data.item || '', last5: data.last5 || '',
       paid: false, pickup_info: data.pickup_info || '', card_text: data.card_text || '',
-      note: data.note || ''
+      note: data.note || '', images: demoImageLinks(data.images)
     });
     result = { success: true, row: row };
   } else if (body.action === 'updateOrder') {
     const o = allOrders.find(function(x){ return x.row === Number(body.row); });
     if (!o) result = { success: false, message: '找不到訂單' };
-    else { Object.assign(o, body.data || {}); result = { success: true }; }
+    else {
+      const patch = Object.assign({}, body.data || {});
+      if (Object.prototype.hasOwnProperty.call(patch, 'images')) patch.images = demoImageLinks(patch.images);
+      Object.assign(o, patch);
+      result = { success: true, images: o.images };
+    }
   } else if (body.action === 'deleteOrder') {
     const before = allOrders.length;
     allOrders = allOrders.filter(function(x){ return x.row !== Number(body.row); });
@@ -1119,8 +1309,137 @@ function readOrderForm(prefix){
     item: document.getElementById(prefix + '-item').value.trim(),
     pickup_info: normalizeNoteText(document.getElementById(prefix + '-info').value),
     card_text: normalizeNoteText(document.getElementById(prefix + '-card').value),
-    note: normalizeNoteText(document.getElementById(prefix + '-note').value)
+    note: normalizeNoteText(document.getElementById(prefix + '-note').value),
+    images: imagesToPayload(draftImages[prefix] || [])
   };
+}
+
+function renderImageDraft(prefix){
+  const row = document.getElementById(prefix + '-image-row');
+  if (!row) return;
+  const list = draftImages[prefix] || [];
+  row.innerHTML = list.map(function(img, i){
+    const src = img.preview || imageDisplayUrl(img.link || img.url || '');
+    return '<div class="ref-chip">'
+      + '<img alt="參考圖片 ' + (i + 1) + '" referrerpolicy="no-referrer" src="' + escAttr(src) + '">'
+      + '<button type="button" class="ref-remove" data-act="remove-image" data-prefix="' + prefix + '" data-index="' + i + '">移除</button>'
+      + '</div>';
+  }).join('');
+  bindImageFallbacks(row);
+}
+
+function bindImageFallbacks(root){
+  const nodes = (root || document).querySelectorAll('img[data-fallback]');
+  for (let i = 0; i < nodes.length; i++) {
+    nodes[i].onerror = function(){
+      const next = this.getAttribute('data-fallback');
+      this.removeAttribute('data-fallback');
+      if (next) this.src = next;
+    };
+  }
+}
+
+function loadImageFromUrl(file){
+  return new Promise(function(resolve, reject){
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = function(){
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = function(){
+      URL.revokeObjectURL(url);
+      reject(new Error('讀取失敗'));
+    };
+    img.src = url;
+  });
+}
+
+// 手機原圖常常好幾 MB。先縮到長邊 1600、再壓成 JPEG，整包才塞得進 Apps Script。
+function compressLoadedImage(img){
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  let edge = maxImageEdge();
+  let bestUrl = '';
+  let bestBytes = Infinity;
+  for (let pass = 0; pass < 3 && bestBytes > maxImageBytes(); pass++) {
+    const size = fitImageSize(srcW, srcH, edge);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, size.width);
+    canvas.height = Math.max(1, size.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const qualities = [0.72, 0.6, 0.48];
+    const samples = [];
+    const urls = {};
+    for (let i = 0; i < qualities.length; i++) {
+      const url = canvas.toDataURL('image/jpeg', qualities[i]);
+      samples.push({ quality: qualities[i], bytes: approxBase64Bytes(url) });
+      urls[qualities[i]] = url;
+    }
+    const chosen = pickJpegQuality(samples, maxImageBytes());
+    bestUrl = urls[chosen];
+    bestBytes = approxBase64Bytes(bestUrl);
+    edge = Math.round(edge * 0.7);
+  }
+  if (img.close) img.close();
+  const comma = bestUrl.indexOf(',');
+  return {
+    name: 'photo.jpg',
+    mime: 'image/jpeg',
+    data: bestUrl.slice(comma + 1),
+    preview: bestUrl
+  };
+}
+
+function compressImageFile(file){
+  const name = String((file && file.name) || '');
+  const type = String((file && file.type) || '');
+  const looksImage = /^image\//.test(type) || /\.(jpe?g|png|gif|webp|heic|heif|bmp)$/i.test(name);
+  if (!file || !looksImage) return Promise.reject(new Error('不是圖片'));
+  // 手機照片常常是側著的。能轉正就轉正，不行就用一般方式讀。
+  let load;
+  try {
+    load = (typeof createImageBitmap === 'function')
+      ? createImageBitmap(file, { imageOrientation: 'from-image' }).catch(function(){ return loadImageFromUrl(file); })
+      : loadImageFromUrl(file);
+  } catch (err) {
+    load = loadImageFromUrl(file);
+  }
+  return Promise.resolve(load).then(function(img){ return compressLoadedImage(img); });
+}
+
+async function onPickImages(prefix, input){
+  const files = [];
+  const picked = (input && input.files) || [];
+  for (let i = 0; i < picked.length; i++) files.push(picked[i]);
+  if (input) input.value = '';
+  if (!files.length) return;
+  imageBusy += 1;
+  try {
+    for (let i = 0; i < files.length; i++) {
+      if ((draftImages[prefix] || []).length >= maxOrderImages()) {
+        showToast('最多 ' + maxOrderImages() + ' 張參考圖片', 'error');
+        break;
+      }
+      try {
+        const prepared = await compressImageFile(files[i]);
+        const added = addImageDraft(draftImages[prefix], prepared, maxOrderImages());
+        draftImages[prefix] = added.list;
+        if (!added.ok) {
+          showToast(added.message, 'error');
+          break;
+        }
+      } catch (err) {
+        showToast('這張圖片讀不到，請改用 JPG 或 PNG', 'error');
+      }
+    }
+    renderImageDraft(prefix);
+  } finally {
+    imageBusy -= 1;
+  }
 }
 
 function clearAddForm(){
@@ -1137,11 +1456,16 @@ function clearAddForm(){
   document.getElementById('f-delivery').selectedIndex = 0;
   checkDeliveryMatch();
   document.getElementById('paste-box').value = '';
+  draftImages.f = [];
+  const imageInput = document.getElementById('f-images');
+  if (imageInput) imageInput.value = '';
+  renderImageDraft('f');
 }
 
 // ── 新增訂單 ──
 async function submitOrder(){
   if (writeBusy) return;
+  if (imageBusy) { showToast('圖片還在處理，請稍候', 'error'); return; }
   const name = document.getElementById('f-name').value.trim();
   const pd = document.getElementById('f-pickup-date').value.trim();
   const item = document.getElementById('f-item').value.trim();
@@ -1153,6 +1477,10 @@ async function submitOrder(){
     return;
   }
   const data = readOrderForm('f');
+  if (imageUploadTooBig(draftImages.f)) {
+    showToast('圖片還是太大，請減少張數', 'error');
+    return;
+  }
   addSubmit = sameSubmissionId(addSubmit, submissionFingerprint(data));
   const btn = document.getElementById('submit-btn');
   const token = beginRequest();
@@ -1418,11 +1746,25 @@ function showDetail(ds, orders, stalls){
 
 function closeDetail(){ document.getElementById('detail-panel').className='detail-panel'; }
 
+function renderOrderImages(order){
+  const links = orderImageLinks(order);
+  if (!links.length) return '';
+  const thumbs = links.map(function(url){
+    const src = imageDisplayUrl(url);
+    const fallback = imageFallbackUrl(url);
+    return '<button type="button" class="ref-zoom" data-act="zoom" data-src="' + escAttr(src) + '" data-fallback="' + escAttr(fallback) + '">'
+      + '<img alt="參考圖片，點一下放大" referrerpolicy="no-referrer" src="' + escAttr(src) + '" data-fallback="' + escAttr(fallback) + '">'
+      + '</button>';
+  }).join('');
+  return '<div class="detail-images"><div class="k">參考圖片</div><div class="ref-row">' + thumbs + '</div><div class="ref-hint">點一下可以看大圖</div></div>';
+}
+
 function renderOrderDetail(order){
-  return orderDetailLines(order).map(function(line){
+  const lines = orderDetailLines(order).map(function(line){
     const text = line.value ? line.value : '（空白）';
     return '<div class="detail-line"><div class="k">' + escHtml(line.label) + '</div><div class="v">' + escHtml(text) + '</div></div>';
   }).join('');
+  return lines + renderOrderImages(order);
 }
 
 function renderOrderActions(order){
@@ -1445,11 +1787,33 @@ function refreshOrderModal(){
   if (!o) { closeOrderModal(); return; }
   document.getElementById('order-detail-body').innerHTML = renderOrderDetail(o);
   document.getElementById('order-detail-actions').innerHTML = renderOrderActions(o);
+  bindImageFallbacks(document.getElementById('order-detail-body'));
 }
 
 function closeOrderModal(){
   viewingRow = null;
+  closeImageZoom();
   document.getElementById('order-modal').classList.remove('open');
+}
+
+function openImageZoom(src, fallback){
+  const img = document.getElementById('image-zoom');
+  if (!img) return;
+  img.dataset.next = fallback || '';
+  img.onerror = function(){
+    const next = img.dataset.next || '';
+    img.dataset.next = '';
+    if (next) img.src = next;
+  };
+  img.src = src || '';
+  document.getElementById('image-modal').classList.add('open');
+}
+
+function closeImageZoom(){
+  const modal = document.getElementById('image-modal');
+  if (modal) modal.classList.remove('open');
+  const img = document.getElementById('image-zoom');
+  if (img) img.removeAttribute('src');
 }
 
 function askConfirm(message){
@@ -1472,6 +1836,19 @@ function onPageClick(ev){
   if (actEl) {
     const row = Number(actEl.getAttribute('data-row'));
     const act = actEl.getAttribute('data-act');
+    if (act === 'remove-image') {
+      const prefix = actEl.getAttribute('data-prefix') || '';
+      const index = Number(actEl.getAttribute('data-index'));
+      if (draftImages[prefix]) {
+        draftImages[prefix] = removeImageDraft(draftImages[prefix], index);
+        renderImageDraft(prefix);
+      }
+      return;
+    }
+    if (act === 'zoom') {
+      openImageZoom(actEl.getAttribute('data-src'), actEl.getAttribute('data-fallback'));
+      return;
+    }
     if (act === 'edit') openEditModal(row);
     else if (act === 'delete') deleteOrder(row);
     else if (act === 'paid') togglePaid(row);
@@ -1496,6 +1873,12 @@ function openEditModal(rowNum){
   document.getElementById('e-info').value=o.pickup_info||'';
   document.getElementById('e-card').value=o.card_text||'';
   document.getElementById('e-note').value=o.note||'';
+  draftImages.e = orderImageLinks(o).map(function(url){
+    return { link: url, preview: imageDisplayUrl(url) };
+  });
+  const imageInput = document.getElementById('e-images');
+  if (imageInput) imageInput.value = '';
+  renderImageDraft('e');
   const sel=document.getElementById('e-delivery');
   for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===o.delivery){sel.selectedIndex=i;break;}}
   document.getElementById('edit-modal').classList.add('open');
@@ -1509,7 +1892,12 @@ function closeEditModal(){
 
 async function saveEdit(){
   if (!editingRow || writeBusy) return;
+  if (imageBusy) { showToast('圖片還在處理，請稍候', 'error'); return; }
   const data = readOrderForm('e');
+  if (imageUploadTooBig(draftImages.e)) {
+    showToast('圖片還是太大，請減少張數', 'error');
+    return;
+  }
   const row = editingRow;
   editSubmit = sameSubmissionId(editSubmit, 'edit:' + row + ':' + submissionFingerprint(data));
   const btn = document.getElementById('edit-save-btn');
@@ -1522,7 +1910,11 @@ async function saveEdit(){
     if (!requestStillCurrent(token)) return;
     if (!json.success) throw new Error(json.message || '更新失敗');
     const o = allOrders.find(function(x){ return x.row === row; });
-    if (o) Object.assign(o, data);
+    if (o) {
+      Object.assign(o, data);
+      // 後端回傳雲端硬碟連結。不要把還沒上傳的檔案內容留在畫面上，下次編輯才不會重傳。
+      if (Array.isArray(json.images)) o.images = json.images;
+    }
     editSubmit = { id: '', fingerprint: '' };
     closeEditModal();
     renderAll();
@@ -1599,6 +1991,9 @@ function shortItem(item){ return item.replace(/《\s*/g,'').replace(/\s*》/g,''
 
 function escHtml(s){
   return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escAttr(s){
+  return escHtml(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 // 金額格子可能是 1390、"1,390"、"$1390"。抓出數字；沒有就當 0。

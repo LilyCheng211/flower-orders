@@ -2,13 +2,18 @@
 // 花店訂單管理系統 - Apps Script 完整版 v2
 // 欄位：A姓名/B電話/C金額/D取花日期/E幾點取花/F配送/G品項/H LINE Pay 交易代碼/I收到款/J收花資訊/K卡片內容/L備註
 // H 欄在前端 JSON 仍叫 last5。電話與交易代碼要以文字寫入，避免開頭的 0 被吃掉。
-// L 欄備註用純文字寫入，換行要留著。不要把備註寫進 M 或 N。
+// L 欄備註用純文字寫入，換行要留著。不要把備註寫進 M、N 或 O。
 // M 欄「訂單編號」是日曆同步自己寫的。刪掉一列時列號會往上移，所以不能用列號認訂單。
-// N 欄「請求編號」是瀏覽器這一次送出產生的。同一編號再進來，只回應成功，不再新增一列。
+// N 欄「請求編號」是瀏覽器這一次送出產生的。同一編號再進來，只回應成功，不再新增一列，也不再上傳一次圖片。
+// O 欄「參考圖片」是第 15 欄。一格可以有多個連結，一行一個，在試算表裡可以點開。
+// 圖片放在雲端硬碟資料夾「花店訂單參考圖」。資料夾本身不分享，所以整包照片不會被搜尋到。
+// 每一張圖另外設成「知道連結的使用者可檢視」，訂單頁的縮圖才顯示得了。拿到單一連結的人看得到那一張。
 // 新增、修改、刪除只先寫試算表就回應。日曆整份對帳改排程，避免一次請求卡太久又被重送。
 // 這份檔案要貼回 Apps Script，並建立新的部署版本，才會在線上生效。
 // 貼上並部署後，請在編輯器手動執行一次 syncToCalendar，把已經殘留的舊日曆事件清乾淨。
 // 也請手動執行一次 authorizeTriggers，同意排程權限。之後每次改訂單才會自動排日曆同步。
+// 這版會用到雲端硬碟。請再手動執行一次 authorizeDrive，同意 Drive 權限：
+// https://www.googleapis.com/auth/drive
 // ============================================================
 
 const SHEET_NAME = "訂單清單";
@@ -16,6 +21,8 @@ const CAL_NAME   = "🌸 花店訂單";
 const ORDER_ID_COL = 13; // M 欄
 const REQUEST_ID_COL = 14; // N 欄
 const NOTE_COL = 12; // L 欄
+const IMAGE_COL = 15; // O 欄，參考圖片連結
+const IMAGE_FOLDER_NAME = "花店訂單參考圖";
 
 function getConfig_() {
   const props = PropertiesService.getScriptProperties();
@@ -89,10 +96,11 @@ function handleRequest(e) {
 function getOrders() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
   ensureNoteHeader_(sheet);
+  ensureImageHeader_(sheet);
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return { success: true, orders: [] };
-  // 固定讀到 L 欄。getDataRange 有時不會把剛加上、或只有備註的那一欄算進去。
-  const width = Math.max(NOTE_COL, sheet.getLastColumn());
+  // 固定讀到 O 欄。getDataRange 有時不會把剛加上的備註或參考圖片算進去。
+  const width = Math.max(IMAGE_COL, sheet.getLastColumn());
   const data = sheet.getRange(1, 1, lastRow, width).getValues();
   const orders = [];
   for (let i = 1; i < data.length; i++) {
@@ -158,6 +166,16 @@ function addOrder(data, requestId) {
 }
 
 function insertOrder_(sheet, data, requestId) {
+  // 先處理圖片。上傳失敗就不要插列，同一個請求編號重送才不會變成兩列或兩套圖。
+  const imageError = validateIncomingImages_(data && data.images);
+  if (imageError) return { success: false, message: imageError };
+  let imageText = "";
+  try {
+    imageText = saveOrderImages_(data || {}, requestId);
+  } catch (err) {
+    return { success: false, message: imageErrorMessage_(err) };
+  }
+
   const lastRow = Math.max(sheet.getLastRow(), 1);
   const width = Math.max(4, sheet.getLastColumn());
   const allData = sheet.getRange(1, 1, lastRow, width).getValues();
@@ -179,9 +197,15 @@ function insertOrder_(sheet, data, requestId) {
   const createdNote = sheet.getRange(insertRow, NOTE_COL);
   createdNote.setNumberFormat("@");
   createdNote.setValue(cells[11]);
+  writeImageCell_(sheet, insertRow, imageText);
   if (requestId) rememberRequestId_(sheet, insertRow, requestId);
   SpreadsheetApp.flush();
-  return { success: true, message: "訂單已新增於第 " + insertRow + " 行", row: insertRow };
+  return {
+    success: true,
+    message: "訂單已新增於第 " + insertRow + " 行",
+    row: insertRow,
+    images: parseImageCell_(imageText)
+  };
 }
 
 function updateOrder(rowNumber, data, requestId) {
@@ -195,10 +219,36 @@ function updateOrder(rowNumber, data, requestId) {
       result = { success: true, duplicate: true };
     } else {
       const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-      writeOrderRow_(sheet, rowNumber, orderToCells_(data || {}, sheet.getRange(rowNumber, 9).getValue()));
-      if (id) CacheService.getScriptCache().put("req:" + id, "u" + rowNumber, 21600);
-      SpreadsheetApp.flush();
-      result = { success: true };
+      const paidNow = sheet.getRange(rowNumber, 9).getValue();
+      // 舊版頁面不會傳 images。沒有這個欄位就不要清掉已經存好的參考圖。
+      if (hasImageField_(data)) {
+        const imageError = validateIncomingImages_(data.images);
+        if (imageError) {
+          result = { success: false, message: imageError };
+        } else {
+          let imageText = "";
+          try {
+            imageText = saveOrderImages_(data, id);
+          } catch (err) {
+            result = { success: false, message: imageErrorMessage_(err) };
+          }
+          if (!result) {
+            const previousImages = String(sheet.getRange(rowNumber, IMAGE_COL).getValue() || "");
+            writeOrderRow_(sheet, rowNumber, orderToCells_(data || {}, paidNow));
+            writeImageCell_(sheet, rowNumber, imageText);
+            try { trashRemovedImages_(previousImages, imageText); }
+            catch (err) { Logger.log("移除參考圖失敗：" + (err && err.message ? err.message : err)); }
+            if (id) CacheService.getScriptCache().put("req:" + id, "u" + rowNumber, 21600);
+            SpreadsheetApp.flush();
+            result = { success: true, images: parseImageCell_(imageText) };
+          }
+        }
+      } else {
+        writeOrderRow_(sheet, rowNumber, orderToCells_(data || {}, paidNow));
+        if (id) CacheService.getScriptCache().put("req:" + id, "u" + rowNumber, 21600);
+        SpreadsheetApp.flush();
+        result = { success: true };
+      }
     }
   } finally {
     lock.releaseLock();
@@ -267,7 +317,148 @@ function orderFromCells_(row, rowNumber) {
     pickup_info: String(cells[9] || ""),
     card_text: String(cells[10] || ""),
     note: normalizeNote_(cells[11]),
+    // 第 15 欄（O）才是參考圖片。舊訂單沒有這一欄時就是空的。
+    images: parseImageCell_(cells[14]),
   };
+}
+
+function maxOrderImages_() { return 6; }
+// 一張圖的 base64 上限。前端會先壓到大約 450KB，這裡再擋一次，避免撐爆 Apps Script 請求。
+function maxImageChars_() { return 700000; }
+
+function hasImageField_(data) {
+  return !!(data && Object.prototype.hasOwnProperty.call(data, "images"));
+}
+
+function imageFileId_(link) {
+  const s = String(link || "");
+  let found = s.match(/\/file\/d\/([a-zA-Z0-9_-]{10,})/);
+  if (found) return found[1];
+  found = s.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+  if (found) return found[1];
+  found = s.match(/\/d\/([a-zA-Z0-9_-]{10,})/);
+  if (found) return found[1];
+  return "";
+}
+
+function imageOpenUrl_(fileId) {
+  return "https://drive.google.com/file/d/" + fileId + "/view";
+}
+
+function cleanImageUrl_(raw) {
+  const s = String(raw == null ? "" : raw).trim();
+  if (!/^https:\/\/[^\s]+$/i.test(s)) return "";
+  if (s.length > 500) return "";
+  return s;
+}
+
+function canonicalImageUrl_(raw) {
+  const url = cleanImageUrl_(raw);
+  if (!url) return "";
+  const id = imageFileId_(url);
+  if (!id) return "";
+  return imageOpenUrl_(id);
+}
+
+function parseImageCell_(raw) {
+  if (raw == null) return [];
+  const parts = String(raw).split(/\s+/);
+  const out = [];
+  const seen = {};
+  for (let i = 0; i < parts.length; i++) {
+    const url = canonicalImageUrl_(parts[i]);
+    if (!url || seen[url]) continue;
+    seen[url] = true;
+    out.push(url);
+  }
+  return out;
+}
+
+function joinImageLinks_(urls) {
+  const text = Array.isArray(urls) ? urls.join("\n") : urls;
+  return parseImageCell_(text).join("\n");
+}
+
+function validateIncomingImages_(images) {
+  if (images == null || images === "") return "";
+  if (!Array.isArray(images)) return "參考圖片格式不正確";
+  if (images.length > maxOrderImages_()) return "參考圖片最多 " + maxOrderImages_() + " 張";
+  let total = 0;
+  for (let i = 0; i < images.length; i++) {
+    const item = images[i] || {};
+    if (item.url || item.link) continue;
+    const data = String(item.data || "").replace(/\s/g, "");
+    if (!data) continue;
+    if (!/^[A-Za-z0-9+/=]+$/.test(data)) return "參考圖片格式不正確";
+    if (data.length > maxImageChars_()) return "有一張圖片太大，請減少張數或換一張";
+    total += data.length;
+  }
+  if (total > maxImageChars_() * maxOrderImages_()) return "參考圖片太大，請減少張數";
+  return "";
+}
+
+function normalizeIncomingImages_(images) {
+  const list = Array.isArray(images) ? images : [];
+  const items = [];
+  const limit = maxOrderImages_();
+  for (let i = 0; i < list.length && items.length < limit; i++) {
+    const item = list[i] || {};
+    const url = canonicalImageUrl_(item.url || item.link || "");
+    if (url) {
+      items.push({ kind: "keep", url: url });
+      continue;
+    }
+    const data = String(item.data || "").replace(/\s/g, "");
+    if (!data) continue;
+    if (!/^[A-Za-z0-9+/=]+$/.test(data)) continue;
+    if (data.length > maxImageChars_()) continue;
+    items.push({ kind: "upload", data: data });
+  }
+  return items;
+}
+
+// 同一個請求編號、同一張序，檔名固定。重送時看到同名檔就不要再上傳一次。
+function uploadFileName_(requestId, index) {
+  const id = cleanRequestId_(requestId);
+  if (!id) return "";
+  return "ref-" + id + "-" + index + ".jpg";
+}
+
+function planImageUploads_(requestId, items, existingNames) {
+  const have = {};
+  const names = existingNames || [];
+  for (let i = 0; i < names.length; i++) have[String(names[i])] = true;
+  const plan = [];
+  let uploadIndex = 0;
+  const list = items || [];
+  for (let i = 0; i < list.length; i++) {
+    if (!list[i] || list[i].kind !== "upload") continue;
+    const name = uploadFileName_(requestId, uploadIndex);
+    plan.push({
+      index: uploadIndex,
+      name: name,
+      reuse: !!(name && have[name])
+    });
+    uploadIndex++;
+  }
+  return plan;
+}
+
+function collectImageLinks_(items, fileIdByUploadIndex) {
+  const links = [];
+  let uploadIndex = 0;
+  const ids = fileIdByUploadIndex || {};
+  const list = items || [];
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (!item) continue;
+    if (item.kind === "keep") links.push(item.url);
+    else if (item.kind === "upload") {
+      if (ids[uploadIndex]) links.push(imageOpenUrl_(ids[uploadIndex]));
+      uploadIndex++;
+    }
+  }
+  return joinImageLinks_(links);
 }
 /*__ORDER_IO_END__*/
 
@@ -337,7 +528,10 @@ function deleteOrder(rowNumber, requestId, expectName) {
       if (wanted && name !== wanted) {
         result = { success: false, message: "這一行已經不是原本那筆訂單，請重新整理後再刪" };
       } else {
+        const imageText = String(sheet.getRange(rowNumber, IMAGE_COL).getValue() || "");
         sheet.deleteRow(rowNumber);
+        try { trashRemovedImages_(imageText, ""); }
+        catch (err) { Logger.log("刪除參考圖失敗：" + (err && err.message ? err.message : err)); }
         if (id) CacheService.getScriptCache().put("req:" + id, "d" + rowNumber, 21600);
         SpreadsheetApp.flush();
         result = { success: true };
@@ -436,6 +630,144 @@ function listRequestIds_(sheet) {
 function ensureRequestIdHeader_(sheet) {
   const cell = sheet.getRange(1, REQUEST_ID_COL);
   if (!String(cell.getValue() || "").trim()) cell.setValue("請求編號");
+}
+
+function ensureImageHeader_(sheet) {
+  const cell = sheet.getRange(1, IMAGE_COL);
+  if (!String(cell.getValue() || "").trim()) cell.setValue("參考圖片");
+}
+
+// O 欄存完整連結，一行一個，試算表上可以點。沒有圖就清掉，避免插入列時抄到上一列。
+function writeImageCell_(sheet, rowNumber, text) {
+  ensureImageHeader_(sheet);
+  const cell = sheet.getRange(rowNumber, IMAGE_COL);
+  const value = String(text || "");
+  if (!value) {
+    cell.clearContent();
+    return;
+  }
+  cell.setNumberFormat("@");
+  try {
+    const urls = value.split("\n");
+    const rich = SpreadsheetApp.newRichTextValue().setText(value);
+    let offset = 0;
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      if (/^https:\/\//i.test(url)) rich.setLinkUrl(offset, offset + url.length, url);
+      offset += url.length + 1;
+    }
+    cell.setRichTextValue(rich.build());
+  } catch (err) {
+    cell.setValue(value);
+  }
+}
+
+function imageErrorMessage_(err) {
+  const msg = String(err && err.message ? err.message : err || "");
+  if (/permission|權限|Authorization|auth/i.test(msg)) {
+    return "參考圖片需要雲端硬碟權限，請擁有者重新授權後再試";
+  }
+  return "參考圖片上傳失敗，請再試一次";
+}
+
+// 資料夾只放在擁有者的雲端硬碟，不對整包開放分享。
+function getOrCreateImageFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const saved = props.getProperty("IMAGE_FOLDER_ID");
+  if (saved) {
+    try {
+      const existing = DriveApp.getFolderById(saved);
+      if (existing && !existing.isTrashed()) return existing;
+    } catch (err) {
+      Logger.log("找不到參考圖資料夾，重新建立：" + err);
+    }
+  }
+  const folder = DriveApp.createFolder(IMAGE_FOLDER_NAME);
+  props.setProperty("IMAGE_FOLDER_ID", folder.getId());
+  return folder;
+}
+
+function findNamedImageFile_(folder, name) {
+  if (!folder || !name) return null;
+  const found = folder.getFilesByName(name);
+  if (found.hasNext()) return found.next();
+  return null;
+}
+
+// 回傳要寫進 O 欄的連結。沒有新圖時不會去碰雲端硬碟。
+function saveOrderImages_(data, requestId) {
+  const items = normalizeIncomingImages_(data && data.images);
+  const uploads = [];
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].kind === "upload") uploads.push(items[i]);
+  }
+  if (!uploads.length) {
+    const kept = [];
+    for (let i = 0; i < items.length; i++) if (items[i].url) kept.push(items[i].url);
+    return joinImageLinks_(kept);
+  }
+
+  const folder = getOrCreateImageFolder_();
+  const existing = [];
+  for (let i = 0; i < uploads.length; i++) {
+    const name = uploadFileName_(requestId, i);
+    if (name && findNamedImageFile_(folder, name)) existing.push(name);
+  }
+  const plan = planImageUploads_(requestId, items, existing);
+  const fileIdByUploadIndex = {};
+  for (let i = 0; i < plan.length; i++) {
+    const step = plan[i];
+    let file = step.reuse ? findNamedImageFile_(folder, step.name) : null;
+    if (!file) {
+      const bytes = Utilities.base64Decode(uploads[step.index].data);
+      const blobName = step.name || ("photo-" + step.index + ".jpg");
+      file = folder.createFile(Utilities.newBlob(bytes, "image/jpeg", blobName));
+      if (step.name) file.setName(step.name);
+    }
+    // 只開放這一張檔案。不要對資料夾 setSharing，避免整包照片被列出來。
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (err) {
+      Logger.log("參考圖連結分享失敗：" + (err && err.message ? err.message : err));
+    }
+    fileIdByUploadIndex[step.index] = file.getId();
+  }
+  return collectImageLinks_(items, fileIdByUploadIndex);
+}
+
+function trashRemovedImages_(previousText, nextText) {
+  const prev = parseImageCell_(previousText);
+  if (!prev.length) return;
+  const nextMap = {};
+  const kept = parseImageCell_(nextText);
+  for (let i = 0; i < kept.length; i++) nextMap[kept[i]] = true;
+  let removed = false;
+  for (let i = 0; i < prev.length; i++) if (!nextMap[prev[i]]) removed = true;
+  if (!removed) return;
+
+  const folderId = getOrCreateImageFolder_().getId();
+  for (let i = 0; i < prev.length; i++) {
+    if (nextMap[prev[i]]) continue;
+    const id = imageFileId_(prev[i]);
+    if (!id) continue;
+    try {
+      const file = DriveApp.getFileById(id);
+      const parents = file.getParents();
+      let ours = false;
+      while (parents.hasNext()) {
+        if (parents.next().getId() === folderId) ours = true;
+      }
+      if (ours && !file.isTrashed()) file.setTrashed(true);
+    } catch (err) {
+      Logger.log("移除參考圖失敗：" + (err && err.message ? err.message : err));
+    }
+  }
+}
+
+// 部署後在編輯器執行一次，同意雲端硬碟權限，並建立參考圖資料夾。
+function authorizeDrive() {
+  const folder = getOrCreateImageFolder_();
+  Logger.log("已可使用雲端硬碟。參考圖資料夾：「" + folder.getName() + "」");
 }
 
 function makeOrderId_() {
@@ -540,7 +872,10 @@ function tryCalendar_(label, fn) {
 function syncToCalendar() {
   const cal   = getOrCreateCalendar();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-  const data  = sheet.getDataRange().getValues();
+  const lastRow = Math.max(sheet.getLastRow(), 1);
+  const width = Math.max(IMAGE_COL, sheet.getLastColumn());
+  // 讀到 O 欄，參考圖片連結才會跟著寫進日曆說明。
+  const data  = sheet.getRange(1, 1, lastRow, width).getValues();
   const now   = new Date();
   const windowStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const scanStart = new Date(windowStart.getFullYear(), windowStart.getMonth() - 18, 1);
@@ -595,6 +930,7 @@ function syncToCalendar() {
       pickupInfo: String(row[9] || '').trim(),
       pickupTime: formatTimeCell(row[4]),
       day:        dayKeyFromDate_(eventDate),
+      imageLinks: parseImageCell_(row[IMAGE_COL - 1]),
     });
   }
 
@@ -694,6 +1030,20 @@ function orderEventTitle_(name, item) {
   return '🌸 ' + String(name || '').trim() + '｜' + shortItem;
 }
 
+function imageLinesForEvent_(order) {
+  const raw = order && (order.imageLinks != null ? order.imageLinks : order.images);
+  const parts = Array.isArray(raw) ? raw : String(raw || '').split(/\s+/);
+  const lines = [];
+  const seen = {};
+  for (let i = 0; i < parts.length; i++) {
+    const s = String(parts[i] || '').trim();
+    if (!/^https:\/\//i.test(s) || seen[s]) continue;
+    seen[s] = true;
+    lines.push(s);
+  }
+  return lines;
+}
+
 function orderEventDescription_(order) {
   const lines = ['客戶：' + (order.name || '')];
   if (order.phone) lines.push('電話：' + order.phone);
@@ -701,6 +1051,12 @@ function orderEventDescription_(order) {
   if (order.delivery) lines.push('配送：' + order.delivery);
   if (order.item) lines.push('品項：' + order.item);
   if (order.pickupInfo) lines.push('收花資訊：' + order.pickupInfo);
+  const images = imageLinesForEvent_(order);
+  if (images.length) {
+    lines.push('參考圖片：');
+    for (let i = 0; i < images.length; i++) lines.push(images[i]);
+  }
+  // 訂單編號維持最後一行，日曆對帳才找得到。
   lines.push('【花店訂單：' + order.orderId + '】');
   return lines.join('\n');
 }
