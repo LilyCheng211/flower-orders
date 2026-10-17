@@ -173,7 +173,12 @@ function insertOrder_(sheet, data, requestId) {
   // 插入列時如果帶進別列的編號，清掉，避免兩張單共用同一個日曆事件或請求編號
   sheet.getRange(insertRow, ORDER_ID_COL).clearContent();
   sheet.getRange(insertRow, REQUEST_ID_COL).clearContent();
-  writeOrderRow_(sheet, insertRow, orderToCells_(data, false));
+  const cells = orderToCells_(data, false);
+  writeOrderRow_(sheet, insertRow, cells);
+  // 編輯舊列時備註會留在 L。新插入的列有時寫不進最後一欄，所以新增這裡再寫一次備註。
+  const createdNote = sheet.getRange(insertRow, NOTE_COL);
+  createdNote.setNumberFormat("@");
+  createdNote.setValue(cells[11]);
   if (requestId) rememberRequestId_(sheet, insertRow, requestId);
   SpreadsheetApp.flush();
   return { success: true, message: "訂單已新增於第 " + insertRow + " 行", row: insertRow };

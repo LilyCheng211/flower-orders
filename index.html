@@ -394,6 +394,8 @@ let viewingRow = null;
 let refreshTimer = null;
 let actionToken = 0;
 let readToken = 0;
+let ordersLoaded = false;
+let loadFlight = null;
 let writeBusy = false;
 let refreshBusy = false;
 let confirmResolve = null;
@@ -429,7 +431,8 @@ async function unlock(){
     if(data.success){
       sessionStorage.setItem('token', data.token);
       document.getElementById('lock-screen').style.display='none';
-      renderCalendar();
+      // 解鎖後立刻抓訂單，並開始每 3 分鐘自動同步。不要先畫成 0 張。
+      startOrderSync();
     } else {
       document.getElementById('lock-error').classList.add('show');
       document.getElementById('lock-input').value='';
@@ -451,7 +454,7 @@ function switchTab(tab, el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   el.classList.add('active');
   document.getElementById('page-'+tab).classList.add('active');
-  if(tab==='calendar'){ loadOrders(); startAutoRefresh(); }
+  if(tab==='calendar'){ loadOrders(!ordersLoaded); startAutoRefresh(); }
 }
 
 // ── Toast ──
@@ -1012,6 +1015,11 @@ function nextOrdersAfterRefresh(previous, result){
   if (!result || !result.ok || !result.orders) return (previous || []).slice();
   return result.orders;
 }
+
+// 已解鎖，或本地示範，一進頁就要抓訂單。還沒解鎖不要把月曆畫成 0 張。
+function shouldStartOrderSync(hasToken, demoMode){
+  return !!demoMode || !!hasToken;
+}
 /*__ORDER_CLIENT_END__*/
 
 const API_TIMEOUT_MS = 20000;
@@ -1158,7 +1166,8 @@ async function submitOrder(){
     showToast(json.duplicate ? '✓ 這筆訂單已經新增過' : '✓ 訂單已同步到 Google Sheet', 'success', token);
     clearAddForm();
     addSubmit = { id: '', fingerprint: '' };
-    if (!DEMO_MODE) allOrders = [];
+    // 新增成功不要先把月曆清成 0 張。再抓一次，備註也會跟著新列回來。
+    if (!DEMO_MODE) loadOrders(true);
   } catch (e) {
     if (!requestStillCurrent(token)) return;
     showToast('新增失敗：' + errText(e) + '。這次沒有重複送出，可以再按一次。', 'error', token);
@@ -1175,30 +1184,63 @@ function renderAll(){
   if (viewingRow) refreshOrderModal();
 }
 
+function showOrdersLoading(){
+  if (ordersLoaded) return;
+  const grid = document.getElementById('cal-grid');
+  if (grid) grid.innerHTML = '<div style="padding:3rem;text-align:center;color:var(--faint)">載入中...</div>';
+  const stats = document.getElementById('cal-stats');
+  if (stats) stats.innerHTML = '<div class="stat-card"><div class="stat-label">載入中</div><div class="stat-val">—</div></div>';
+}
+
+// 解鎖或重新整理後呼叫：抓訂單，並每 3 分鐘再抓一次。
+function startOrderSync(){
+  if (!shouldStartOrderSync(!!sessionStorage.getItem('token'), DEMO_MODE)) return;
+  if (DEMO_MODE) {
+    if (!allOrders.length) allOrders = DEMO_ORDERS.map(function(o){ return Object.assign({}, o); });
+    ordersLoaded = true;
+    renderAll();
+    return;
+  }
+  showOrdersLoading();
+  loadOrders(true);
+  startAutoRefresh();
+}
+
 // ── 讀取訂單 ──
 async function loadOrders(force){
-  if (DEMO_MODE) { renderAll(); return true; }
-  if (allOrders.length > 0 && !force) { renderAll(); return true; }
+  if (DEMO_MODE) { renderAll(); ordersLoaded = true; return true; }
+  if (ordersLoaded && !force) { renderAll(); return true; }
+  // 沒有要求重抓時，跟進行中的那次共用，避免後到的失敗把先到的訂單清掉
+  if (loadFlight && !force) return loadFlight;
   readToken += 1;
   const token = readToken;
-  const previous = allOrders.slice();
-  try {
-    const json = await apiGet('action=getOrders');
+  const flight = apiGet('action=getOrders').then(function(json){
     if (token !== readToken) return false;
     if (!json || !json.success) throw new Error((json && json.message) || '讀取失敗');
     const orders = (json.orders || []).map(function(o){
       return Object.assign({}, o, { phone: restoreLeadingZero(o.phone) });
     });
-    allOrders = nextOrdersAfterRefresh(previous, { ok: true, orders: orders });
+    allOrders = orders;
+    ordersLoaded = true;
     renderAll();
     return true;
-  } catch (e) {
+  }).catch(function(e){
     if (token !== readToken) return false;
-    allOrders = nextOrdersAfterRefresh(previous, { ok: false });
-    renderAll();
-    showToast('讀取訂單失敗：' + errText(e) + '。畫面上仍是剛剛的資料。', 'error');
+    // 失敗時不要改 allOrders。還沒載入過就維持載入失敗，不要畫成 0 張。
+    if (!ordersLoaded) {
+      const grid = document.getElementById('cal-grid');
+      if (grid) grid.innerHTML = '<div style="padding:3rem;text-align:center;color:var(--red)">載入失敗，請按「手動刷新」</div>';
+    } else {
+      renderAll();
+    }
+    const hint = ordersLoaded ? '。畫面上仍是剛剛的資料。' : '。請按「手動刷新」。';
+    showToast('讀取訂單失敗：' + errText(e) + hint, 'error');
     return false;
-  }
+  }).finally(function(){
+    if (loadFlight === flight) loadFlight = null;
+  });
+  loadFlight = flight;
+  return flight;
 }
 
 async function manualRefresh(){
@@ -1592,11 +1634,15 @@ function parseTime(t){
   return null;
 }
 
-// 初始化月曆。demo=1 用畫面裡的假訂單，方便本地看備註，不連 Google。
-if (DEMO_MODE) allOrders = DEMO_ORDERS.map(function(o){ return Object.assign({}, o); });
+// 有登入就立刻抓訂單。還沒解鎖不要先畫成 0 張。demo=1 用畫面裡的假訂單。
 document.body.addEventListener('click', onPageClick);
-renderCalendar();
-renderStats();
+if (DEMO_MODE) {
+  allOrders = DEMO_ORDERS.map(function(o){ return Object.assign({}, o); });
+  ordersLoaded = true;
+  renderAll();
+} else if (sessionStorage.getItem('token')) {
+  startOrderSync();
+}
 </script>
 </body>
 </html>

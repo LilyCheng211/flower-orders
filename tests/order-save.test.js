@@ -136,6 +136,10 @@ const replaced = sandbox.nextOrdersAfterRefresh(
 );
 eq(replaced[0].name, '新的', '重新整理成功才換成新資料');
 
+assert(sandbox.shouldStartOrderSync(true, false) === true, '已解鎖就要開始抓訂單');
+assert(sandbox.shouldStartOrderSync(false, true) === true, '示範模式一進頁就抓訂單');
+assert(sandbox.shouldStartOrderSync(false, false) === false, '還沒解鎖不要抓、也不要畫成 0 張');
+
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 assert(html.indexOf("method: 'POST'") >= 0, '寫入使用 POST');
 assert(html.indexOf('text/plain;charset=utf-8') >= 0, '寫入用純文字本文，避免預檢被擋');
@@ -148,6 +152,34 @@ assert(html.indexOf('for (let tryAgain') < 0 && html.indexOf('apiWrite(') >= 0, 
 const writeFn = html.slice(html.indexOf('function apiWrite'), html.indexOf('function demoWrite'));
 const writeBody = writeFn.slice(writeFn.indexOf('{'));
 assert(writeBody.indexOf('apiWrite') < 0, '寫入函式自己不會再呼叫一次');
+
+const unlockFn = html.slice(html.indexOf('async function unlock'), html.indexOf('if(sessionStorage.getItem'));
+assert(unlockFn.indexOf('startOrderSync()') >= 0, '解鎖成功後立刻抓訂單');
+const boot = html.slice(html.lastIndexOf('document.body.addEventListener'));
+assert(boot.indexOf('startOrderSync()') >= 0, '重新整理且已登入時立刻抓訂單');
+assert(boot.indexOf('renderCalendar()') < 0 && boot.indexOf('renderStats()') < 0, '進頁時不要先用空清單畫月曆');
+const autoFn = html.slice(html.indexOf('function startAutoRefresh'), html.indexOf('function renderStats'));
+assert(autoFn.indexOf('loadOrders(true)') >= 0, '每 3 分鐘的自動同步會真的再抓一次');
+const addFn = html.slice(html.indexOf('async function submitOrder'), html.indexOf('function renderAll'));
+assert(addFn.indexOf("readOrderForm('f')") >= 0, '新增訂單會讀表單，含備註');
+assert(addFn.indexOf("action: 'addOrder'") >= 0, '新增走 addOrder');
+assert(addFn.indexOf('allOrders = []') < 0 && addFn.indexOf('allOrders=[]') < 0, '新增成功不會先把訂單清成空的');
+assert(addFn.indexOf('loadOrders(true)') >= 0, '新增成功後會再抓一次，畫面上看得到新訂單');
+
+const script = fs.readFileSync(path.join(__dirname, '..', 'Appscript.ts'), 'utf8');
+const insertFn = script.slice(script.indexOf('function insertOrder_'), script.indexOf('function updateOrder'));
+assert(insertFn.indexOf('orderToCells_') >= 0, '新增用 orderToCells_ 組列，備註在第 12 格');
+assert(insertFn.indexOf('writeOrderRow_') >= 0, '新增會整列寫入');
+assert(insertFn.indexOf('NOTE_COL') >= 0 && insertFn.indexOf('cells[11]') >= 0, '新增後再把備註寫進 L 欄');
+const createBody = sandbox.encodeWriteBody({
+  action: 'addOrder',
+  requestId: 'rnote123',
+  data: data
+});
+const createParsed = sandbox.parseWriteBody(createBody);
+eq(createParsed.action, 'addOrder', '新增的本文是 addOrder');
+eq(createParsed.data.note, cleanNote, '新增本文帶著多行備註與；');
+eq(sandbox.orderToCells_(createParsed.data, false)[11], cleanNote, '新增本文的備註會進 L 欄');
 
 if (failed) {
   console.error('共 ' + failed + ' 項失敗');
