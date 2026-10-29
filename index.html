@@ -33,14 +33,18 @@ body{font-family:'Noto Sans TC',sans-serif;background:var(--cream);color:var(--i
 .lock-btn:hover{background:var(--terra2)}
 .lock-error{font-size:12px;color:var(--red);margin-top:8px;display:none}
 .lock-error.show{display:block}
+.lock-remember{font-size:12px;color:var(--faint);margin-top:12px;line-height:1.5}
 
 /* Nav */
-nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;display:flex;align-items:center;position:sticky;top:0;z-index:100}
+nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;display:flex;align-items:center;position:sticky;top:0;z-index:100;flex-wrap:wrap}
+.nav-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.nav-logout{font-size:13px;color:var(--red);background:var(--red-l);border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:500;font-family:'Noto Sans TC',sans-serif}
+.nav-logout:hover{opacity:.8}
 .nav-logo{font-family:'Noto Serif TC',serif;font-size:16px;font-weight:700;color:var(--ink);padding:1rem 1.5rem 1rem 0;border-right:1px solid var(--bdr);margin-right:1.5rem;letter-spacing:.05em}
 .nav-tab{padding:1.1rem 1.25rem;font-size:14px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s}
 .nav-tab:hover{color:var(--ink)}
 .nav-tab.active{color:var(--terra);border-bottom-color:var(--terra);font-weight:500}
-.nav-sheet{margin-left:auto;font-size:13px;color:var(--grn);background:var(--grn-l);border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:500;font-family:'Noto Sans TC',sans-serif;text-decoration:none;display:flex;align-items:center;gap:5px}
+.nav-sheet{font-size:13px;color:var(--grn);background:var(--grn-l);border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:500;font-family:'Noto Sans TC',sans-serif;text-decoration:none;display:flex;align-items:center;gap:5px}
 .nav-sheet:hover{opacity:.8}
 
 /* Pages */
@@ -81,6 +85,8 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
 .field.emphasize textarea{border-color:var(--terra);background:#fff6f1}
 .field.emphasize label{color:var(--terra2)}
 .field label.as-is{text-transform:none;letter-spacing:0}
+.field .paid-check{display:flex;align-items:center;gap:8px;min-height:42px;padding:10px 14px;background:var(--cream);border:1px solid var(--bdr);border-radius:8px;font-size:14px;color:var(--ink);font-weight:400;letter-spacing:0;text-transform:none;cursor:pointer}
+.field .paid-check input{width:18px;height:18px;padding:0;accent-color:var(--sage-dark);flex:0 0 auto}
 .sub-btn{margin-top:1.5rem;width:100%;padding:14px;background:var(--terra);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:500;font-family:'Noto Sans TC',sans-serif;cursor:pointer;transition:background .2s;letter-spacing:.05em}
 .sub-btn:hover{background:var(--terra2)}
 .sub-btn:disabled{background:var(--faint);cursor:not-allowed}
@@ -211,6 +217,7 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
     <input class="lock-input" type="password" id="lock-input" placeholder="••••••••" onkeydown="if(event.key==='Enter')unlock()">
     <button class="lock-btn" onclick="unlock()">進入</button>
     <div class="lock-error" id="lock-error">密碼錯誤，請再試一次</div>
+    <p class="lock-remember">登入後這台裝置會記住 30 天，不會保存密碼。</p>
   </div>
 </div>
 
@@ -296,7 +303,10 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
   <div class="nav-logo">🌸 花店</div>
   <div class="nav-tab active" onclick="switchTab('form',this)">新增訂單</div>
   <div class="nav-tab" onclick="switchTab('calendar',this)">訂單月曆</div>
-  <a class="nav-sheet" href="https://docs.google.com/spreadsheets/d/1vqJAiWu0Cc8Fm5gN3bxU5znPT4KSVe1nubHkmV0nP7E/edit?gid=1505578009#gid=1505578009" target="_blank">📊 開啟 Google Sheet</a>
+  <div class="nav-actions">
+    <button type="button" class="nav-logout" id="logout-all-btn" onclick="logoutAllDevices()">登出所有裝置</button>
+    <a class="nav-sheet" href="https://docs.google.com/spreadsheets/d/1vqJAiWu0Cc8Fm5gN3bxU5znPT4KSVe1nubHkmV0nP7E/edit?gid=1505578009#gid=1505578009" target="_blank">📊 開啟 Google Sheet</a>
+  </div>
 </nav>
 
 <!-- 填單頁 -->
@@ -317,6 +327,13 @@ nav{background:var(--warm);border-bottom:1px solid var(--bdr);padding:0 2rem;dis
       <div class="field"><label>電話<span class="opt">選填</span></label><input type="tel" id="f-phone" placeholder="09xx-xxx-xxx"><div class="field-hint" id="h-phone">請手動補充</div></div>
       <div class="field"><label class="as-is">LINE Pay 交易代碼<span class="opt">選填</span></label><input type="text" id="f-last5" placeholder="例如 L7918"><div class="field-hint" id="h-last5">請手動補充</div></div>
       <div class="field"><label>金額<span class="opt">選填</span></label><input type="number" id="f-amount" placeholder="1390"><div class="field-hint" id="h-amount">請手動補充</div></div>
+      <div class="field">
+        <label class="as-is">收到款</label>
+        <label class="paid-check">
+          <input type="checkbox" id="f-paid">
+          <span>已收到款</span>
+        </label>
+      </div>
     </div>
     <div class="fsep">訂單內容</div>
     <div class="fgrid">
@@ -460,27 +477,29 @@ const WARN_FIELDS = [
 ];
 
 // ── 密碼鎖 ──
+// 密碼只送去比對，不寫進瀏覽器。留下的是後端簽過的憑證，30 天後自己失效。
 async function unlock(){
-  const val = document.getElementById('lock-input').value;
+  const input = document.getElementById('lock-input');
+  const err = document.getElementById('lock-error');
+  const val = input.value;
   try {
     const res = await fetch(`${API_URL}?action=login&password=${encodeURIComponent(val)}`);
     const data = await res.json();
-    if(data.success){
-      sessionStorage.setItem('token', data.token);
+    input.value = '';
+    if(data.success && rememberDeviceToken(data.token)){
+      err.classList.remove('show');
       document.getElementById('lock-screen').style.display='none';
       // 解鎖後立刻抓訂單，並開始每 3 分鐘自動同步。不要先畫成 0 張。
       startOrderSync();
     } else {
-      document.getElementById('lock-error').classList.add('show');
-      document.getElementById('lock-input').value='';
+      err.textContent = data.success ? '登入憑證無效，請再試一次' : '密碼錯誤，請再試一次';
+      err.classList.add('show');
     }
   } catch(e){
-    document.getElementById('lock-error').classList.add('show');
-    document.getElementById('lock-input').value='';
+    input.value = '';
+    err.textContent = '連不上伺服器，請再試一次';
+    err.classList.add('show');
   }
-}
-if(sessionStorage.getItem('token') || DEMO_MODE){
-  document.getElementById('lock-screen').style.display='none';
 }
 
 // 讀寫的連線函式放在解析程式後面，這裡先留位置。
@@ -1007,13 +1026,48 @@ function submissionFingerprint(data){
     pickup_info: src.pickup_info || '',
     card_text: src.card_text || '',
     note: src.note || '',
+    paid: !!src.paid,
     images: imageFingerprint(src.images)
   });
 }
 
 function maxOrderImages(){ return 6; }
-function maxImageEdge(){ return 1600; }
+function maxImageEdge(){ return 1280; }
 function maxImageBytes(){ return 450 * 1024; }
+function jpegQualitySteps(){ return [0.8, 0.72, 0.6, 0.48]; }
+function deviceTokenKey(){ return 'flowerDeviceToken'; }
+function writeTimeoutMs(bodyObj){
+  const images = bodyObj && bodyObj.data && bodyObj.data.images;
+  if (!Array.isArray(images)) return 20000;
+  for (let i = 0; i < images.length; i++) {
+    if (images[i] && images[i].data) return 90000;
+  }
+  return 20000;
+}
+function getOrdersTimeoutMs(){ return 45000; }
+function shouldRetryGetOrders(error){
+  return !(error && error.auth);
+}
+function formPaid(value){
+  return value === true || String(value).toLowerCase() === 'true' || value === '✓';
+}
+
+// 憑證長得像「版本|到期毫秒|64 位元十六進位簽章」。過期或格式不對就當沒登入。
+function parseDeviceToken(token, now){
+  const parts = String(token || '').split('|');
+  if (parts.length !== 3) return null;
+  if (!/^\d+$/.test(parts[0]) || !/^\d+$/.test(parts[1])) return null;
+  if (!/^[a-f0-9]{64}$/.test(parts[2])) return null;
+  const expiry = Number(parts[1]);
+  const at = typeof now === 'number' ? now : Date.now();
+  return { version: Number(parts[0]), expiry: expiry, expired: !(expiry > at) };
+}
+
+// 儲存成功用後端回傳的連結。沒帶回時先用這次畫面上的圖，明細不用等手動刷新。
+function imagesAfterSave(data, serverImages){
+  if (Array.isArray(serverImages)) return serverImages.slice();
+  return demoImageLinks(data && data.images);
+}
 
 function fitImageSize(width, height, maxEdge){
   const edge = maxEdge || maxImageEdge();
@@ -1209,6 +1263,57 @@ function shouldStartOrderSync(hasToken, demoMode){
 
 const API_TIMEOUT_MS = 20000;
 
+function readStoredToken(){
+  let raw = '';
+  try { raw = localStorage.getItem(deviceTokenKey()) || ''; } catch (err) { raw = ''; }
+  const parsed = parseDeviceToken(raw, Date.now());
+  if (!parsed || parsed.expired) {
+    if (raw) {
+      try { localStorage.removeItem(deviceTokenKey()); } catch (err) {}
+    }
+    return '';
+  }
+  return raw;
+}
+
+function rememberDeviceToken(token){
+  const parsed = parseDeviceToken(token, Date.now());
+  if (!parsed || parsed.expired) return false;
+  try {
+    localStorage.setItem(deviceTokenKey(), String(token));
+    sessionStorage.removeItem('token');
+  } catch (err) {
+    return false;
+  }
+  return true;
+}
+
+function showLockScreen(message){
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+  const screen = document.getElementById('lock-screen');
+  if (screen) screen.style.display = 'flex';
+  const input = document.getElementById('lock-input');
+  if (input) input.value = '';
+  const err = document.getElementById('lock-error');
+  if (!err) return;
+  if (message) {
+    err.textContent = message;
+    err.classList.add('show');
+  } else {
+    err.classList.remove('show');
+  }
+}
+
+function forgetDevice(message){
+  try { localStorage.removeItem(deviceTokenKey()); } catch (err) {}
+  try { sessionStorage.removeItem('token'); } catch (err) {}
+  showLockScreen(message || '');
+}
+
+function isUnauthorized(json){
+  return !!(json && json.success === false && json.message === '未授權');
+}
+
 function beginRequest(){
   actionToken += 1;
   return actionToken;
@@ -1221,11 +1326,16 @@ function errText(e){
   return e.message || '連線失敗';
 }
 
-// 每次後端呼叫都有逾時。寫入不在這裡重送。
+// 每次後端呼叫都有逾時。帶新圖片的寫入等比較久。寫入不在這裡重送，同一筆仍沿用請求編號。
 function fetchJson(url, options){
+  const extra = options || {};
+  const timeoutMs = extra.timeoutMs || API_TIMEOUT_MS;
   const controller = new AbortController();
-  const timer = setTimeout(function(){ controller.abort(); }, API_TIMEOUT_MS);
-  const opts = Object.assign({ signal: controller.signal }, options || {});
+  const timer = setTimeout(function(){ controller.abort(); }, timeoutMs);
+  const opts = { signal: controller.signal };
+  if (extra.method) opts.method = extra.method;
+  if (extra.headers) opts.headers = extra.headers;
+  if (extra.body != null) opts.body = extra.body;
   return fetch(url, opts).then(function(r){
     return r.text().then(function(text){
       let json = null;
@@ -1244,19 +1354,41 @@ function fetchJson(url, options){
   });
 }
 
-function apiGet(params){
+function apiGet(params, timeoutMs){
   if (DEMO_MODE) return Promise.resolve({ success: true, orders: allOrders.map(function(o){ return Object.assign({}, o); }) });
-  const secret = sessionStorage.getItem('token') || '';
-  return fetchJson(API_URL + '?secret=' + encodeURIComponent(secret) + '&' + params);
+  const secret = readStoredToken();
+  if (!secret) {
+    const err = new Error('未授權');
+    err.auth = true;
+    return Promise.reject(err);
+  }
+  return fetchJson(API_URL + '?secret=' + encodeURIComponent(secret) + '&' + params, {
+    timeoutMs: timeoutMs || API_TIMEOUT_MS
+  }).then(function(json){
+    if (isUnauthorized(json)) {
+      const err = new Error('未授權');
+      err.auth = true;
+      throw err;
+    }
+    return json;
+  });
 }
 
 function apiWrite(bodyObj){
   if (DEMO_MODE) return Promise.resolve(demoWrite(bodyObj || {}));
-  const secret = sessionStorage.getItem('token') || '';
+  const secret = readStoredToken();
+  if (!secret) {
+    forgetDevice('登入已失效，請重新輸入密碼');
+    return Promise.resolve({ success: false, message: '未授權' });
+  }
   return fetchJson(API_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: encodeWriteBody(Object.assign({ secret: secret }, bodyObj || {}))
+    body: encodeWriteBody(Object.assign({ secret: secret }, bodyObj || {})),
+    timeoutMs: writeTimeoutMs(bodyObj)
+  }).then(function(json){
+    if (isUnauthorized(json)) forgetDevice('登入已失效，請重新輸入密碼');
+    return json;
   });
 }
 
@@ -1271,7 +1403,7 @@ function demoWrite(body){
       row: row, name: data.name || '', phone: data.phone || '', amount: data.amount || '',
       pickup_date: data.pickup_date || '', pickup_time: data.pickup_time || '',
       delivery: data.delivery || '', item: data.item || '', last5: data.last5 || '',
-      paid: false, pickup_info: data.pickup_info || '', card_text: data.card_text || '',
+      paid: formPaid(data.paid), pickup_info: data.pickup_info || '', card_text: data.card_text || '',
       note: data.note || '', images: demoImageLinks(data.images)
     });
     result = { success: true, row: row };
@@ -1288,6 +1420,8 @@ function demoWrite(body){
     const before = allOrders.length;
     allOrders = allOrders.filter(function(x){ return x.row !== Number(body.row); });
     result = before === allOrders.length ? { success: false, message: '找不到訂單' } : { success: true };
+  } else if (body.action === 'logoutAll') {
+    result = { success: true };
   } else if (body.action === 'markPaid') {
     const o = allOrders.find(function(x){ return x.row === Number(body.row); });
     if (o) { o.paid = String(body.value) === 'true'; result = { success: true }; }
@@ -1298,7 +1432,7 @@ function demoWrite(body){
 }
 
 function readOrderForm(prefix){
-  return {
+  const data = {
     name: document.getElementById(prefix + '-name').value.trim(),
     phone: document.getElementById(prefix + '-phone').value.trim(),
     last5: document.getElementById(prefix + '-last5').value.trim(),
@@ -1312,6 +1446,12 @@ function readOrderForm(prefix){
     note: normalizeNoteText(document.getElementById(prefix + '-note').value),
     images: imagesToPayload(draftImages[prefix] || [])
   };
+  // 編輯沿用試算表上的收款，不從編輯表單改。只有新增才看「收到款」。
+  if (prefix === 'f') {
+    const box = document.getElementById('f-paid');
+    data.paid = !!(box && box.checked);
+  }
+  return data;
 }
 
 function renderImageDraft(prefix){
@@ -1355,7 +1495,7 @@ function loadImageFromUrl(file){
   });
 }
 
-// 手機原圖常常好幾 MB。先縮到長邊 1600、再壓成 JPEG，整包才塞得進 Apps Script。
+// 手機原圖常常好幾 MB。先縮到長邊 1280、品質約 0.8，還太大就再縮小再壓低。
 function compressLoadedImage(img){
   const srcW = img.naturalWidth || img.width;
   const srcH = img.naturalHeight || img.height;
@@ -1371,7 +1511,7 @@ function compressLoadedImage(img){
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    const qualities = [0.72, 0.6, 0.48];
+    const qualities = jpegQualitySteps();
     const samples = [];
     const urls = {};
     for (let i = 0; i < qualities.length; i++) {
@@ -1454,6 +1594,8 @@ function clearAddForm(){
     if (el) { el.value = ''; el.classList.remove('filled'); }
   });
   document.getElementById('f-delivery').selectedIndex = 0;
+  const paidBox = document.getElementById('f-paid');
+  if (paidBox) paidBox.checked = false;
   checkDeliveryMatch();
   document.getElementById('paste-box').value = '';
   draftImages.f = [];
@@ -1490,6 +1632,7 @@ async function submitOrder(){
   try {
     const json = await apiWrite({ action: 'addOrder', requestId: addSubmit.id, data: data });
     if (!requestStillCurrent(token)) return;
+    if (isUnauthorized(json)) return;
     if (!json.success) throw new Error(json.message || '新增失敗');
     showToast(json.duplicate ? '✓ 這筆訂單已經新增過' : '✓ 訂單已同步到 Google Sheet', 'success', token);
     clearAddForm();
@@ -1522,7 +1665,7 @@ function showOrdersLoading(){
 
 // 解鎖或重新整理後呼叫：抓訂單，並每 3 分鐘再抓一次。
 function startOrderSync(){
-  if (!shouldStartOrderSync(!!sessionStorage.getItem('token'), DEMO_MODE)) return;
+  if (!shouldStartOrderSync(!!readStoredToken(), DEMO_MODE)) return;
   if (DEMO_MODE) {
     if (!allOrders.length) allOrders = DEMO_ORDERS.map(function(o){ return Object.assign({}, o); });
     ordersLoaded = true;
@@ -1534,6 +1677,18 @@ function startOrderSync(){
   startAutoRefresh();
 }
 
+function takeOrders(json, token){
+  if (token !== readToken) return false;
+  if (!json || !json.success) throw new Error((json && json.message) || '讀取失敗');
+  const orders = (json.orders || []).map(function(o){
+    return Object.assign({}, o, { phone: restoreLeadingZero(o.phone) });
+  });
+  allOrders = orders;
+  ordersLoaded = true;
+  renderAll();
+  return true;
+}
+
 // ── 讀取訂單 ──
 async function loadOrders(force){
   if (DEMO_MODE) { renderAll(); ordersLoaded = true; return true; }
@@ -1542,18 +1697,25 @@ async function loadOrders(force){
   if (loadFlight && !force) return loadFlight;
   readToken += 1;
   const token = readToken;
-  const flight = apiGet('action=getOrders').then(function(json){
+  const flight = (async function(){
+    let lastError = null;
+    // 讀取常常第一次逾時。自動再試一次，不要讓使用者先看到失敗。
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (token !== readToken) return false;
+      try {
+        const json = await apiGet('action=getOrders', getOrdersTimeoutMs());
+        return takeOrders(json, token);
+      } catch (e) {
+        if (token !== readToken) return false;
+        lastError = e;
+        if (!shouldRetryGetOrders(e)) break;
+      }
+    }
     if (token !== readToken) return false;
-    if (!json || !json.success) throw new Error((json && json.message) || '讀取失敗');
-    const orders = (json.orders || []).map(function(o){
-      return Object.assign({}, o, { phone: restoreLeadingZero(o.phone) });
-    });
-    allOrders = orders;
-    ordersLoaded = true;
-    renderAll();
-    return true;
-  }).catch(function(e){
-    if (token !== readToken) return false;
+    if (lastError && lastError.auth) {
+      forgetDevice('登入已失效，請重新輸入密碼');
+      return false;
+    }
     // 失敗時不要改 allOrders。還沒載入過就維持載入失敗，不要畫成 0 張。
     if (!ordersLoaded) {
       const grid = document.getElementById('cal-grid');
@@ -1562,9 +1724,9 @@ async function loadOrders(force){
       renderAll();
     }
     const hint = ordersLoaded ? '。畫面上仍是剛剛的資料。' : '。請按「手動刷新」。';
-    showToast('讀取訂單失敗：' + errText(e) + hint, 'error');
+    showToast('讀取訂單失敗：' + errText(lastError) + hint, 'error');
     return false;
-  }).finally(function(){
+  })().finally(function(){
     if (loadFlight === flight) loadFlight = null;
   });
   loadFlight = flight;
@@ -1816,10 +1978,12 @@ function closeImageZoom(){
   if (img) img.removeAttribute('src');
 }
 
-function askConfirm(message){
+function askConfirm(message, okLabel){
   return new Promise(function(resolve){
     confirmResolve = resolve;
     document.getElementById('confirm-text').textContent = message;
+    const okBtn = document.getElementById('confirm-ok');
+    if (okBtn) okBtn.textContent = okLabel || '確定';
     document.getElementById('confirm-modal').classList.add('open');
   });
 }
@@ -1908,17 +2072,21 @@ async function saveEdit(){
   try {
     const json = await apiWrite({ action: 'updateOrder', requestId: editSubmit.id, row: row, data: data });
     if (!requestStillCurrent(token)) return;
+    if (isUnauthorized(json)) return;
     if (!json.success) throw new Error(json.message || '更新失敗');
     const o = allOrders.find(function(x){ return x.row === row; });
     if (o) {
-      Object.assign(o, data);
-      // 後端回傳雲端硬碟連結。不要把還沒上傳的檔案內容留在畫面上，下次編輯才不會重傳。
-      if (Array.isArray(json.images)) o.images = json.images;
+      const patch = Object.assign({}, data);
+      delete patch.images;
+      Object.assign(o, patch);
+      // 後端回傳雲端硬碟連結。沒帶回時先用這次畫面上的圖，明細立刻看得到。
+      o.images = imagesAfterSave(data, json.images);
     }
     editSubmit = { id: '', fingerprint: '' };
     closeEditModal();
     renderAll();
     showToast('✓ 已更新', 'success', token);
+    if (!DEMO_MODE) loadOrders(true);
   } catch (e) {
     if (!requestStillCurrent(token)) return;
     showToast('更新失敗：' + errText(e) + '。這次沒有重複送出。', 'error', token);
@@ -1941,6 +2109,11 @@ async function togglePaid(rowNum){
   try {
     const json = await apiWrite({ action: 'markPaid', row: rowNum, value: o.paid ? 'true' : 'false' });
     if (!requestStillCurrent(token)) return;
+    if (isUnauthorized(json)) {
+      const current = allOrders.find(function(x){ return x.row === rowNum; });
+      if (current) current.paid = previous;
+      return;
+    }
     if (!json.success) throw new Error(json.message || '更新收款失敗');
   } catch (e) {
     if (!requestStillCurrent(token)) return;
@@ -1960,7 +2133,7 @@ async function deleteOrder(rowNum){
   writeBusy = true;
   let ok = false;
   try {
-    ok = await askConfirm('確定要刪除「' + (o.name || '這筆訂單') + '」的訂單嗎？刪除後不能復原。');
+    ok = await askConfirm('確定要刪除「' + (o.name || '這筆訂單') + '」的訂單嗎？刪除後不能復原。', '確定刪除');
   } catch (e) {
     ok = false;
   }
@@ -1971,6 +2144,7 @@ async function deleteOrder(rowNum){
   try {
     const json = await apiWrite({ action: 'deleteOrder', requestId: deleteSubmit.id, row: rowNum, name: o.name || '' });
     if (!requestStillCurrent(token)) return;
+    if (isUnauthorized(json)) return;
     if (!json.success) throw new Error(json.message || '刪除失敗');
     allOrders = allOrders.filter(function(x){ return x.row !== rowNum; });
     if (viewingRow === rowNum) closeOrderModal();
@@ -2029,13 +2203,45 @@ function parseTime(t){
   return null;
 }
 
+async function logoutAllDevices(){
+  if (writeBusy) return;
+  let ok = false;
+  try {
+    ok = await askConfirm('確定要登出所有裝置嗎？這台和其他已記住登入的裝置都要重新輸入密碼。', '登出所有裝置');
+  } catch (e) {
+    ok = false;
+  }
+  if (!ok) return;
+  if (DEMO_MODE) {
+    forgetDevice();
+    return;
+  }
+  const token = beginRequest();
+  writeBusy = true;
+  try {
+    const json = await apiWrite({ action: 'logoutAll' });
+    if (!requestStillCurrent(token)) return;
+    if (isUnauthorized(json)) return;
+    if (!json || !json.success) throw new Error((json && json.message) || '登出失敗');
+    forgetDevice();
+  } catch (e) {
+    if (!requestStillCurrent(token)) return;
+    showToast('登出失敗：' + errText(e), 'error', token);
+  } finally {
+    writeBusy = false;
+  }
+}
+
 // 有登入就立刻抓訂單。還沒解鎖不要先畫成 0 張。demo=1 用畫面裡的假訂單。
 document.body.addEventListener('click', onPageClick);
+try { sessionStorage.removeItem('token'); } catch (err) {}
 if (DEMO_MODE) {
+  document.getElementById('lock-screen').style.display = 'none';
   allOrders = DEMO_ORDERS.map(function(o){ return Object.assign({}, o); });
   ordersLoaded = true;
   renderAll();
-} else if (sessionStorage.getItem('token')) {
+} else if (readStoredToken()) {
+  document.getElementById('lock-screen').style.display = 'none';
   startOrderSync();
 }
 </script>
