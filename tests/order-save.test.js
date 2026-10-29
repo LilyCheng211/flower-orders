@@ -153,8 +153,13 @@ const writeFn = html.slice(html.indexOf('function apiWrite'), html.indexOf('func
 const writeBody = writeFn.slice(writeFn.indexOf('{'));
 assert(writeBody.indexOf('apiWrite') < 0, '寫入函式自己不會再呼叫一次');
 
-const unlockFn = html.slice(html.indexOf('async function unlock'), html.indexOf('if(sessionStorage.getItem'));
+const unlockFn = html.slice(html.indexOf('async function unlock'), html.indexOf('function switchTab'));
 assert(unlockFn.indexOf('startOrderSync()') >= 0, '解鎖成功後立刻抓訂單');
+assert(unlockFn.indexOf('rememberDeviceToken') >= 0, '登入成功才把憑證留下');
+assert(html.indexOf("sessionStorage.setItem('token'") < 0, '不再把登入存進 sessionStorage');
+assert(html.indexOf('localStorage.setItem(deviceTokenKey()') >= 0, '憑證改存在 localStorage');
+assert(html.indexOf('id="f-paid"') >= 0, '新增訂單有收到款');
+assert(html.indexOf('>登出所有裝置<') >= 0, '有登出所有裝置按鈕');
 const boot = html.slice(html.lastIndexOf('document.body.addEventListener'));
 assert(boot.indexOf('startOrderSync()') >= 0, '重新整理且已登入時立刻抓訂單');
 assert(boot.indexOf('renderCalendar()') < 0 && boot.indexOf('renderStats()') < 0, '進頁時不要先用空清單畫月曆');
@@ -180,6 +185,25 @@ const createParsed = sandbox.parseWriteBody(createBody);
 eq(createParsed.action, 'addOrder', '新增的本文是 addOrder');
 eq(createParsed.data.note, cleanNote, '新增本文帶著多行備註與；');
 eq(sandbox.orderToCells_(createParsed.data, false)[11], cleanNote, '新增本文的備註會進 L 欄');
+assert(sandbox.paidFlag_(true) === true, '布林 true 是已收款');
+assert(sandbox.paidFlag_('true') === true, '字串 true 跟 markPaid 一樣');
+assert(sandbox.paidFlag_(false) === false, '沒勾是未收款');
+assert(sandbox.paidFlag_('false') === false, '字串 false 是未收款');
+eq(sandbox.orderToCells_(data, sandbox.paidFlag_(true))[8], true, '收到款寫進 I 欄，是布林');
+eq(sandbox.orderToCells_(data, sandbox.paidFlag_(false))[8], false, '沒勾寫進 I 欄是 false');
+eq(sandbox.tokenTtlMs_(), 30 * 24 * 60 * 60 * 1000, '憑證 30 天過期');
+const payload = sandbox.tokenPayload_(1, 2000000000000);
+eq(payload, '1|2000000000000', '憑證本文是版本|到期');
+const sig = 'ab'.repeat(32);
+const deviceToken = payload + '|' + sig;
+eq(sandbox.sessionTokenStatus_(deviceToken, 1000, 1, sig), 'ok', '簽章、期限、版本都對才算有效');
+eq(sandbox.sessionTokenStatus_(deviceToken, 2000000000001, 1, sig), 'expired', '過期憑證無效');
+eq(sandbox.sessionTokenStatus_(deviceToken, 1000, 2, sig), 'revoked', '版本被登出所有裝置後無效');
+eq(sandbox.sessionTokenStatus_(deviceToken, 1000, 1, 'cd'.repeat(32)), 'bad-signature', '簽章不符無效');
+eq(sandbox.sessionTokenStatus_('raw-secret', 1000, 1, 'raw-secret'), 'invalid', '不再接受裸的 apiSecret');
+const paidPrint = sandbox.submissionFingerprint({ name: '水晶', paid: true, images: [] });
+const unpaidPrint = sandbox.submissionFingerprint({ name: '水晶', paid: false, images: [] });
+assert(paidPrint !== unpaidPrint, '收到款改了，這次送出就算不同');
 
 if (failed) {
   console.error('共 ' + failed + ' 項失敗');

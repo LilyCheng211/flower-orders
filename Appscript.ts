@@ -9,7 +9,9 @@
 // 圖片放在雲端硬碟資料夾「花店訂單參考圖」。資料夾本身不分享，所以整包照片不會被搜尋到。
 // 每一張圖另外設成「知道連結的使用者可檢視」，訂單頁的縮圖才顯示得了。拿到單一連結的人看得到那一張。
 // 新增、修改、刪除只先寫試算表就回應。日曆整份對帳改排程，避免一次請求卡太久又被重送。
-// 這份檔案要貼回 Apps Script，並建立新的部署版本，才會在線上生效。
+// 登入成功只發簽章憑證（版本|到期|HMAC），不把 API_SECRET 交給瀏覽器。憑證版本存在 Script Properties。
+// 這份檔案要貼回現有的 Apps Script，用「部署」→「管理部署」編輯 API_URL 那個部署，版本選「新版本」。
+// 不要新建另一個部署，網址才不會變。前端要等這個新版本上線後再合併。
 // 貼上並部署後，請在編輯器手動執行一次 syncToCalendar，把已經殘留的舊日曆事件清乾淨。
 // 也請手動執行一次 authorizeTriggers，同意排程權限。之後每次改訂單才會自動排日曆同步。
 // 這版會用到雲端硬碟。請再手動執行一次 authorizeDrive，同意 Drive 權限：
@@ -30,6 +32,54 @@ function getConfig_() {
     apiSecret:     props.getProperty('API_SECRET'),
     adminPassword: props.getProperty('ADMIN_PASSWORD'),
   };
+}
+
+// 憑證版本沒寫過時當作 1。登出所有裝置才把這個數字加一，舊憑證就全部失效。
+function currentTokenVersion_() {
+  const raw = PropertiesService.getScriptProperties().getProperty("TOKEN_VERSION");
+  const n = parseInt(raw, 10);
+  if (!isFinite(n) || n < 1) return 1;
+  return n;
+}
+
+// HMAC-SHA256 的位元組轉成 64 個小寫十六進位，前後端才對得起同一條簽章。
+function hmacHex_(text, secret) {
+  const bytes = Utilities.computeHmacSha256Signature(String(text), String(secret == null ? "" : secret));
+  let hex = "";
+  for (let i = 0; i < bytes.length; i++) {
+    let n = bytes[i];
+    if (n < 0) n += 256;
+    const h = n.toString(16);
+    hex += h.length < 2 ? "0" + h : h;
+  }
+  return hex;
+}
+
+function issueSessionToken_(config) {
+  const version = currentTokenVersion_();
+  const expiry = Date.now() + tokenTtlMs_();
+  const payload = tokenPayload_(version, expiry);
+  return payload + "|" + hmacHex_(payload, config.apiSecret);
+}
+
+function tokenIsValid_(token, config) {
+  if (!config || !config.apiSecret) return false;
+  const parsed = parseSessionToken_(token);
+  if (!parsed) return false;
+  const expected = hmacHex_(parsed.payload, config.apiSecret);
+  return sessionTokenStatus_(token, Date.now(), currentTokenVersion_(), expected) === "ok";
+}
+
+function logoutAllDevices_() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { success: false, message: "系統忙碌，請再試一次" };
+  try {
+    const next = currentTokenVersion_() + 1;
+    PropertiesService.getScriptProperties().setProperty("TOKEN_VERSION", String(next));
+    return { success: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 const STALLS = {
@@ -68,14 +118,19 @@ function handleRequest(e) {
 
     if (action === "login") {
       if (params.password === config.adminPassword) {
-        output.setContent(JSON.stringify({ success: true, token: config.apiSecret }));
+        // 密碼比對維持原本的 adminPassword。通過後只發 30 天簽章憑證，不回傳 apiSecret。
+        if (!config.apiSecret) {
+          output.setContent(JSON.stringify({ success: false, message: "未授權" }));
+        } else {
+          output.setContent(JSON.stringify({ success: true, token: issueSessionToken_(config) }));
+        }
       } else {
         output.setContent(JSON.stringify({ success: false, message: "密碼錯誤" }));
       }
       return output;
     }
 
-    if (params.secret !== config.apiSecret) {
+    if (!tokenIsValid_(params.secret, config)) {
       output.setContent(JSON.stringify({ success: false, message: "未授權" }));
       return output;
     }
@@ -85,6 +140,7 @@ function handleRequest(e) {
     else if (action === "updateOrder") result = updateOrder(Number(params.row), JSON.parse(params.data || "{}"), params.requestId);
     else if (action === "deleteOrder") result = deleteOrder(Number(params.row), params.requestId, params.name);
     else if (action === "markPaid")    result = markPaid(Number(params.row), params.value);
+    else if (action === "logoutAll")   result = logoutAllDevices_();
     else result = { success: false, message: "未知的 action" };
     output.setContent(JSON.stringify(result));
   } catch (err) {
@@ -191,7 +247,8 @@ function insertOrder_(sheet, data, requestId) {
   // 插入列時如果帶進別列的編號，清掉，避免兩張單共用同一個日曆事件或請求編號
   sheet.getRange(insertRow, ORDER_ID_COL).clearContent();
   sheet.getRange(insertRow, REQUEST_ID_COL).clearContent();
-  const cells = orderToCells_(data, false);
+  // I 欄跟 markPaid 一樣寫布林。表單沒勾就是 false。
+  const cells = orderToCells_(data, paidFlag_(data && data.paid));
   writeOrderRow_(sheet, insertRow, cells);
   // 編輯舊列時備註會留在 L。新插入的列有時寫不進最後一欄，所以新增這裡再寫一次備註。
   const createdNote = sheet.getRange(insertRow, NOTE_COL);
@@ -217,6 +274,13 @@ function updateOrder(rowNumber, data, requestId) {
   try {
     if (id && CacheService.getScriptCache().get("req:" + id)) {
       result = { success: true, duplicate: true };
+      // 上次已經寫入，只是瀏覽器逾時。把 O 欄現有的圖回傳，明細才不用再等手動刷新。
+      try {
+        const savedSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+        result.images = parseImageCell_(savedSheet.getRange(rowNumber, IMAGE_COL).getValue());
+      } catch (err) {
+        Logger.log("讀取已儲存的參考圖失敗：" + (err && err.message ? err.message : err));
+      }
     } else {
       const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
       const paidNow = sheet.getRange(rowNumber, 9).getValue();
@@ -258,6 +322,42 @@ function updateOrder(rowNumber, data, requestId) {
 }
 
 /*__ORDER_IO_START__*/
+function tokenTtlMs_() {
+  return 30 * 24 * 60 * 60 * 1000;
+}
+
+function tokenPayload_(version, expiryMs) {
+  return String(version) + "|" + String(expiryMs);
+}
+
+function parseSessionToken_(token) {
+  const parts = String(token == null ? "" : token).split("|");
+  if (parts.length !== 3) return null;
+  if (!/^\d+$/.test(parts[0]) || !/^\d+$/.test(parts[1])) return null;
+  if (!/^[a-f0-9]{64}$/.test(parts[2])) return null;
+  return {
+    version: Number(parts[0]),
+    expiry: Number(parts[1]),
+    signature: parts[2],
+    payload: parts[0] + "|" + parts[1]
+  };
+}
+
+// 簽章、到期、版本都要過。版本不同代表已經按過登出所有裝置。
+function sessionTokenStatus_(token, nowMs, currentVersion, expectedSig) {
+  const parsed = parseSessionToken_(token);
+  if (!parsed) return "invalid";
+  if (!(parsed.expiry > nowMs)) return "expired";
+  if (parsed.version !== Number(currentVersion)) return "revoked";
+  if (parsed.signature !== expectedSig) return "bad-signature";
+  return "ok";
+}
+
+// 跟 markPaid 一樣：只有布林 true 或字串 "true"（以及舊的勾）算已收款。
+function paidFlag_(value) {
+  return value === true || String(value).toLowerCase() === "true" || value === "✓";
+}
+
 function normalizeNote_(val) {
   return String(val == null ? "" : val).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
 }

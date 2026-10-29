@@ -38,10 +38,24 @@ const openB = 'https://drive.google.com/file/d/keep654321/view';
 
 eq(sandbox.fitImageSize(4000, 3000, 1600).width, 1600, '手機橫圖長邊縮到 1600');
 eq(sandbox.fitImageSize(4000, 3000, 1600).height, 1200, '手機橫圖高度跟著縮');
-eq(sandbox.fitImageSize(3000, 4000).width, 1200, '手機直圖寬度跟著縮');
-eq(sandbox.fitImageSize(3000, 4000).height, 1600, '手機直圖長邊縮到 1600');
+eq(sandbox.fitImageSize(3000, 4000).width, 960, '手機直圖寬度跟著縮到 1280');
+eq(sandbox.fitImageSize(3000, 4000).height, 1280, '手機直圖長邊縮到 1280');
+eq(sandbox.maxImageEdge(), 1280, '上傳前長邊是 1280');
+eq(sandbox.jpegQualitySteps()[0], 0.8, 'JPEG 先從品質 0.8 開始壓');
 eq(sandbox.fitImageSize(800, 600, 1600).width, 800, '小圖不放大');
 eq(sandbox.fitImageSize(0, 10).width, 0, '沒有尺寸就不用縮');
+const shown = sandbox.imagesAfterSave(
+  { images: [{ data: 'YQ==', mime: 'image/jpeg' }] },
+  [keepA]
+);
+eq(shown[0], keepA, '儲存成功後明細用後端回傳的圖片');
+const localPreview = sandbox.imagesAfterSave({ images: [{ data: 'YQ==', mime: 'image/jpeg' }] });
+eq(localPreview[0], 'data:image/jpeg;base64,YQ==', '後端沒帶回連結時，先用這次的圖顯示');
+eq(sandbox.writeTimeoutMs({ data: { images: [{ data: 'YQ==' }] } }), 90000, '有新圖片的寫入等 90 秒');
+eq(sandbox.writeTimeoutMs({ data: { images: [{ url: keepA }] } }), 20000, '只有舊連結維持原本逾時');
+eq(sandbox.getOrdersTimeoutMs(), 45000, '讀取訂單等 45 秒');
+assert(sandbox.shouldRetryGetOrders({ auth: true }) === false, '未授權不要自動重試');
+assert(sandbox.shouldRetryGetOrders(new Error('連線逾時，請再試一次')) === true, '讀取逾時會再試一次');
 
 eq(sandbox.approxBase64Bytes('YQ=='), 1, 'base64 長度換算位元組');
 eq(sandbox.pickJpegQuality([
@@ -214,6 +228,14 @@ assert(html.indexOf('data-act="remove-image"') >= 0, '編輯時可以移除縮�
 assert(html.indexOf('data-act="zoom"') >= 0, '明細可以點開放大');
 assert(script.indexOf('action === "login"') >= 0, '登入流程還在');
 assert(script.indexOf('params.password === config.adminPassword') >= 0, '密碼仍由後端比對');
+assert(script.indexOf('Utilities.computeHmacSha256Signature') >= 0, '登入憑證用 HMAC-SHA256');
+assert(script.indexOf('TOKEN_VERSION') >= 0, '憑證版本存在 Script Properties');
+assert(script.indexOf('action === "logoutAll"') >= 0, '有登出所有裝置');
+assert(script.indexOf('token: config.apiSecret') < 0, '登入不再回傳裸的 apiSecret');
+assert(script.indexOf('params.secret !== config.apiSecret') < 0, '不再用裸密鑰比對');
+assert(insertFn.indexOf('paidFlag_') >= 0, '新增訂單的收到款寫進 I 欄');
+const updateFn = script.slice(script.indexOf('function updateOrder'), script.indexOf('/*__ORDER_IO_START__*/'));
+assert(updateFn.indexOf('result.images') >= 0, '重送成功時帶回已存的圖片');
 
 if (failed) {
   console.error('共 ' + failed + ' 項失敗');
